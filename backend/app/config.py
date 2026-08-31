@@ -1,4 +1,9 @@
-"""运行配置：从项目根的 .env 读取，密钥永不入库。"""
+"""启动种子配置。
+
+.env 只在首次运行、库中还没有任何 provider 档案时用来建一份初始配置。
+之后一切以 SQLite 中的档案为准（见 store.py），用户可在设置界面随时改，
+因此任何厂商信息都不应写死在代码路径上。密钥永不入库（git）。
+"""
 from __future__ import annotations
 
 import os
@@ -17,8 +22,6 @@ CACHE_DB = STORAGE / "cache.db"
 
 @dataclass(frozen=True)
 class Settings:
-    provider: str = os.getenv("LLM_PROVIDER", "qwen")
-
     qwen_api_key: str = os.getenv("QWEN_API_KEY", "")
     qwen_base_url: str = os.getenv("QWEN_BASE_URL", "")
     qwen_model_translate: str = os.getenv("QWEN_MODEL_TRANSLATE", "qwen3.6-flash")

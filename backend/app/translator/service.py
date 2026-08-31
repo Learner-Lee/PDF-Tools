@@ -4,12 +4,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from ..config import settings
 from ..parser.model import Block
 from .base import OpenAICompatProvider, ProviderError, Usage, parse_segments
 from .cache import TranslationCache
 from .glossary import build_glossary, extract_terms, format_glossary
-from .providers import get_provider
+from .providers import get_gloss_provider, get_provider
 
 log = logging.getLogger(__name__)
 
@@ -86,7 +85,11 @@ class Translator:
             self.glossary_text = format_glossary(cached)
             return cached
         terms = extract_terms([b.text for b in blocks])
-        mapping = build_glossary(self.provider, terms, model=settings.qwen_model_gloss)
+        gloss = get_gloss_provider()
+        try:
+            mapping = build_glossary(gloss, terms, model=gloss.model)
+        finally:
+            gloss.close()
         if mapping:
             self.cache.put_glossary(doc_hash, mapping)
         self.glossary_text = format_glossary(mapping)

@@ -6,10 +6,13 @@ Qwen 与 llama.cpp 都走 OpenAI 兼容协议，因此共用一份调用实现�
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 
 import httpx
+
+log = logging.getLogger(__name__)
 
 _RE_FENCE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$")
 
@@ -35,13 +38,41 @@ class OpenAICompatProvider:
 
     name = "openai-compat"
 
-    def __init__(self, base_url: str, api_key: str, model: str, timeout: float = 180.0):
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        model: str,
+        *,
+        name: str = "openai-compat",
+        extra_body: dict | None = None,
+        timeout: float = 180.0,
+    ):
         if not base_url:
-            raise ProviderError(f"{self.name}: base_url 未配置")
+            raise ProviderError("base_url 未配置")
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
+        self.name = name
+        # 厂商特有的请求体字段（如通义的 enable_thinking）。不写死在代码里，
+        # 因为把它发给 OpenAI 之类不认识该参数的服务会直接 400。
+        self.extra_body = dict(extra_body or {})
+        self._extra_ok = True
         self._client = httpx.Client(timeout=timeout)
+
+    def _headers(self) -> dict:
+        h = {"Content-Type": "application/json"}
+        if self.api_key:                       # 本地模型通常不需要密钥
+            h["Authorization"] = f"Bearer {self.api_key}"
+        return h
+
+    def list_models(self) -> list[str]:
+        """拉取该端点真实可用的模型列表，避免在代码里写死会过期的模型名。"""
+        r = self._client.get(f"{self.base_url}/models", headers=self._headers())
+        if r.status_code != 200:
+            raise ProviderError(f"HTTP {r.status_code}: {r.text[:200]}")
+        data = r.json().get("data") or []
+        return sorted(str(m.get("id")) for m in data if m.get("id"))
 
     def chat(
         self,
@@ -60,18 +91,24 @@ class OpenAICompatProvider:
             ],
             "temperature": temperature,
             "max_tokens": max_tokens,
-            # 硬性默认值，不做成可选项：qwen3.x 全系是推理模型，开启思考会让
-            # 一句翻译的 completion_tokens 从 7 涨到 300+，批量翻译成本差约 40 倍。
-            "enable_thinking": False,
         }
+        if self._extra_ok:
+            payload.update(self.extra_body)
+
         r = self._client.post(
-            f"{self.base_url}/chat/completions",
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
+            f"{self.base_url}/chat/completions", json=payload, headers=self._headers()
         )
+        # 端点不认识某个厂商特有参数时会 400。去掉附加字段重试一次，
+        # 这样一份配置填错了 extra_body 也不至于完全用不了。
+        if r.status_code == 400 and self._extra_ok and self.extra_body:
+            body = r.text.lower()
+            if any(k.lower() in body for k in self.extra_body):
+                log.warning("%s 不支持附加参数 %s，已停用", self.name, list(self.extra_body))
+                self._extra_ok = False
+                payload = {k: v for k, v in payload.items() if k not in self.extra_body}
+                r = self._client.post(
+                    f"{self.base_url}/chat/completions", json=payload, headers=self._headers()
+                )
         if r.status_code != 200:
             raise ProviderError(f"{self.name} HTTP {r.status_code}: {r.text[:300]}")
         data = r.json()

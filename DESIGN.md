@@ -90,14 +90,17 @@
 
 ### 3.2 翻译层
 
-统一 Provider 接口，两个实现走**同一套 OpenAI 兼容调用代码**，切换只改 base_url：
+翻译层不绑定任何厂商。所有 OpenAI 兼容端点共用一份调用实现，差异全部收敛到
+**Provider 档案**（`base_url` / `api_key` / `model_translate` / `model_gloss` / `extra_body`），
+存本地 SQLite，可在设置界面随时增删改。`.env` 只在库为空时做一次种子导入。
 
-| Provider | Base URL | 模型 |
-|---|---|---|
-| `QwenProvider`（默认） | `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` | 翻译与释义均用 `qwen3.6-flash` |
-| `LlamaCppProvider` | `http://localhost:8080/v1` | llama.cpp server |
+内置预设（仅为填表起点，可任意修改）：阿里云百炼、DeepSeek、Moonshot、智谱 GLM、
+硅基流动、OpenAI、OpenRouter、Ollama、llama.cpp、自定义。
 
-**模型选型**：套餐内不含翻译专用模型（无 `qwen-mt-*`），按「便宜够用」选 `qwen3.6-flash`（套餐内最便宜的文本模型）。质量不满意时改 `.env` 一行切到 `qwen3.7-plus`，代码无需改动。
+**刻意不内置模型名清单** —— 各家模型更新太快，写死必然过期。
+连上后调 `GET /models` 拉真实列表让用户挑。
+
+**本地模型无需密钥**：`api_key` 为空时不发送 `Authorization` 头。
 
 #### ⚠️ 必须关闭思考模式
 
@@ -108,7 +111,15 @@
 | 默认（带思考） | 300+ |
 | `enable_thinking: false` | **7** |
 
-批量翻译整本 PDF 时差异约 **40 倍成本**。所有请求**必须**携带 `enable_thinking: false`，这是 provider 层的硬性默认值，不做成可选项。
+批量翻译整本 PDF 时差异约 **40 倍成本**。
+
+但 `enable_thinking` 是**通义特有参数**，发给 OpenAI 之类的端点会直接 400。
+因此它属于档案里的 `extra_body`，而不是写死的默认值：
+
+- 通义系预设默认带 `{"enable_thinking": false}`
+- 请求因该参数被拒（400 且错误信息含参数名）时，**自动去掉并重试一次**，
+  之后记住不再试探（已有单元测试覆盖）
+- 设置界面的"测试连接"会在 `completion_tokens` 异常高时提示用户可能没关思考模式
 
 #### 批量分段协议（已实测通过）
 
