@@ -82,6 +82,13 @@ def get_file(doc_id: str):
     return FileResponse(path, media_type="application/pdf")
 
 
+@router.get("/{doc_id}/pages")
+def get_all_pages(doc_id: str):
+    """一次取回全部页的块结构。不含 span，体量很小，省掉逐页往返。"""
+    doc = _need(doc_id)
+    return {"pages": [page_payload(doc, i) for i in range(doc.page_count)]}
+
+
 @router.get("/{doc_id}/pages/{n}")
 def get_page(doc_id: str, n: int):
     doc = _need(doc_id)

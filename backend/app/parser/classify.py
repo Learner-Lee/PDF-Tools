@@ -13,6 +13,8 @@ _RE_CAPTION = re.compile(r"^\s*(Figure|Fig\.|Table|Algorithm|Listing|Appendix)\s
 _RE_LIST = re.compile(r"^\s*([•·▪‣∙]|[-–—]\s|\(?[a-z0-9]{1,3}[.)]\s)")
 _RE_HEADING_NUM = re.compile(r"^\s*(\d+(\.\d+)*|[A-Z](\.\d+)*)\s*\.?\s+\S")
 _RE_REF_HEAD = re.compile(r"^\s*(References|Bibliography|参考文献)\s*$", re.I)
+#: 附录/章节标题：字母或数字编号后跟空格与正文，如 "A Release Artifacts"、"B.1 Prompt variants"
+_RE_SECTION_HEAD = re.compile(r"^\s*(Appendix\b|附录|[A-Z](\.\d+)*\s+\S|\d+(\.\d+)*\s+\S)")
 
 
 def _ratio(spans: list[Span], attr: str) -> float:
@@ -72,6 +74,21 @@ def classify(
     return BlockType.BODY
 
 
+def _ends_references(block: Block) -> bool:
+    """判断该块是否标志着参考文献区结束。
+
+    附录常常排在参考文献之后。若 in_references 一经置位就再不复位，
+    整个附录都会被当成文献跳过翻译 —— 实测这份论文有 8 页附录因此丢失。
+    参考文献条目不加粗，而附录章节标题加粗且带编号，据此区分。
+    """
+    text = block.text.strip()
+    return (
+        _ratio(block.spans, "bold") > 0.7
+        and len(text) < 120
+        and bool(_RE_SECTION_HEAD.match(text))
+    )
+
+
 def classify_page(
     blocks: list[Block],
     page_height: float,
@@ -81,6 +98,8 @@ def classify_page(
 ) -> bool:
     """就地分类整页。返回离开本页时是否仍处于参考文献区。"""
     for b in blocks:
+        if in_references and _ends_references(b):
+            in_references = False
         b.type = classify(b, page_height, page_width, body_size, in_references)
         if b.type is BlockType.HEADING and _RE_REF_HEAD.match(b.text.strip()):
             in_references = True

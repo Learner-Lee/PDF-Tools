@@ -1,0 +1,293 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "./lib/api";
+import PdfPane from "./components/PdfPane";
+import TransPane from "./components/TransPane";
+import Gutter from "./components/Gutter";
+import Settings from "./components/Settings";
+
+/** 滚到哪译到哪：当前页 + 预取后两页 */
+const PREFETCH = 2;
+
+function Dropzone({ onFile, onOpen, recent, error, busy, progress }) {
+  const [over, setOver] = useState(false);
+  const inputRef = useRef(null);
+  return (
+    <div className="empty">
+      <div
+        className={"drop" + (over ? " is-over" : "")}
+        onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setOver(false);
+          const f = e.dataTransfer.files?.[0];
+          if (f) onFile(f);
+        }}
+      >
+        <h1>PDF 对照</h1>
+        <p>
+          把英文 PDF 拖进来，左边是原页，右边是中文。
+          <br />
+          当前支持文字版 PDF；扫描件需要 OCR，还没做。
+        </p>
+        <input ref={inputRef} type="file" accept="application/pdf" hidden
+               onChange={(e) => e.target.files[0] && onFile(e.target.files[0])} />
+        <button className="btn" onClick={() => inputRef.current?.click()} disabled={busy}>
+          {busy ? `读取中 ${Math.round(progress * 100)}%` : "选择文件"}
+        </button>
+        {error && <p className="note note-err">{error}</p>}
+
+        {recent.length > 0 && (
+          <div className="recent">
+            <div className="recent-label">最近打开</div>
+            {recent.map((r) => (
+              <button key={r.file_hash} className="recent-item"
+                      onClick={() => onOpen(r.file_hash)} disabled={busy}>
+                <span className="recent-name">{r.filename}</span>
+                <span className="folio">{r.page_count} 页</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const [doc, setDoc] = useState(null);
+  const [pages, setPages] = useState([]);
+  const [active, setActive] = useState(null);
+  const [folio, setFolio] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [bulk, setBulk] = useState(null);
+  const [recent, setRecent] = useState([]);
+
+  const enPane = useRef(null);
+  const zhPane = useRef(null);
+  const syncing = useRef(false);
+  const syncTimer = useRef(0);
+  const asked = useRef(new Set());
+
+  useEffect(() => {
+    if (!doc) api.list().then((d) => setRecent(d.documents)).catch(() => {});
+  }, [doc]);
+
+  const open = async (summary) => {
+    const { pages } = await api.pages(summary.id);
+    asked.current = new Set();
+    setDoc(summary);
+    setPages(pages);
+    setFolio(1);
+  };
+
+  // ── 打开已解析过的文档 ────────────────────────────────
+  const onOpen = async (id) => {
+    setBusy(true); setError("");
+    try { await open(await api.doc(id)); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  // ── 上传 ──────────────────────────────────────────────
+  const onFile = async (file) => {
+    setBusy(true); setError(""); setProgress(0);
+    try {
+      await open(await api.upload(file, setProgress));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ── 懒加载翻译 ────────────────────────────────────────
+  const ensure = useCallback(
+    async (from) => {
+      if (!doc) return;
+      const want = [];
+      for (let i = from; i < Math.min(from + 1 + PREFETCH, doc.page_count); i++) {
+        if (!asked.current.has(i)) { asked.current.add(i); want.push(i); }
+      }
+      if (!want.length) return;
+      try {
+        const { translations } = await api.translate(doc.id, want);
+        if (!Object.keys(translations).length) return;
+        setPages((ps) =>
+          ps.map((p) => ({
+            ...p,
+            blocks: p.blocks.map((b) =>
+              translations[b.id] ? { ...b, translation: translations[b.id] } : b
+            ),
+          }))
+        );
+      } catch (e) {
+        want.forEach((i) => asked.current.delete(i));   // 失败可重试
+        setError(e.message);
+      }
+    },
+    [doc]
+  );
+
+  useEffect(() => { if (doc) ensure(0); }, [doc, ensure]);
+
+  // ── 滚动：定位当前页、驱动懒加载、决定活动段 ───────────
+  const onEnScroll = () => {
+    const el = enPane.current;
+    if (!el) return;
+    const mid = el.scrollTop + el.clientHeight * 0.35;
+    let cur = 0;
+    for (const w of el.querySelectorAll(".page-wrap")) {
+      if (w.offsetTop <= mid) cur = Number(w.dataset.page);
+    }
+    setFolio(cur + 1);
+    ensure(cur);
+
+    if (syncing.current) return;
+    const best = nearestTo(el, ".blockbox:not(.is-skip)");
+    if (best && best !== active) { setActive(best); scrollTo(zhPane, best); }
+  };
+
+  // 右栏滚动同样驱动左栏 —— 两侧都要能带动对方，才叫对照
+  const onZhScroll = () => {
+    const el = zhPane.current;
+    if (!el || syncing.current) return;
+    const best = nearestTo(el, ".seg-block, .refs-mark");
+    if (best && best !== active) { setActive(best); scrollTo(enPane, best); }
+  };
+
+  /** 取该栏视线高度（顶部 30% 处）最近的块 id */
+  const nearestTo = (pane, selector) => {
+    const line = pane.getBoundingClientRect().top + pane.clientHeight * 0.3;
+    let best = null, bestD = Infinity;
+    for (const el of pane.querySelectorAll(selector)) {
+      const r = el.getBoundingClientRect();
+      if (r.height === 0) continue;
+      const d = Math.abs(r.top + r.height / 2 - line);
+      if (d < bestD) { bestD = d; best = el.dataset.block; }
+    }
+    return best;
+  };
+
+  /**
+   * 同步滚动另一栏。
+   *
+   * 关键是"程序化滚动中"这个标记何时解除：用固定超时会在平滑滚动跨度大时
+   * 提前解除，尾部的滚动事件被当成用户操作，触发反向同步，两栏就开始互相弹回。
+   * 改为等目标栏真正停止滚动（最后一个 scroll 事件后 140ms）再解除。
+   */
+  const scrollTo = (paneRef, id, smooth = false) => {
+    const pane = paneRef.current;
+    const el = pane?.querySelector(`[data-block="${CSS.escape(id)}"]`);
+    if (!el) return;
+
+    syncing.current = true;
+    clearTimeout(syncTimer.current);
+    const settle = () => {
+      clearTimeout(syncTimer.current);
+      syncTimer.current = setTimeout(() => {
+        pane.removeEventListener("scroll", settle);
+        syncing.current = false;
+      }, 140);
+    };
+    pane.addEventListener("scroll", settle);
+    settle();
+
+    // 不能用 offsetTop：左栏的块嵌在 position:relative 的 .page-wrap 里，
+    // offsetParent 是页面而非栏，拿到的是页内偏移。按 rect 差值算才对两栏都成立。
+    const top =
+      el.getBoundingClientRect().top -
+      pane.getBoundingClientRect().top +
+      pane.scrollTop -
+      pane.clientHeight * 0.3;
+    pane.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
+  };
+
+  // 悬停与滚动都可设定活动段，后发生的一方说了算
+  const onPick = (id, side, force = false) => {
+    setActive(id);
+    if (force) scrollTo(side === "en" ? zhPane : enPane, id, true);
+  };
+
+  // ── 全文翻译 ──────────────────────────────────────────
+  const translateAll = async () => {
+    if (!doc || bulk) return;
+    setError("");
+    setBulk({ done: 0, total: 0 });
+    try {
+      await api.translateAll(doc.id, (ev) => {
+        if (ev.type === "start") setBulk({ done: 0, total: ev.total });
+        else if (ev.type === "progress") setBulk({ done: ev.done, total: ev.total });
+        else if (ev.type === "error") setError(ev.message);
+        else if (ev.type === "done") {
+          const t = ev.translations;
+          setPages((ps) =>
+            ps.map((p) => ({
+              ...p,
+              blocks: p.blocks.map((b) => (t[b.id] ? { ...b, translation: t[b.id] } : b)),
+            }))
+          );
+          for (let i = 0; i < doc.page_count; i++) asked.current.add(i);
+        }
+      });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBulk(null);
+    }
+  };
+
+  if (!doc) {
+    return (
+      <>
+        <div className="bar">
+          <span className="wordmark">PDF 对照</span>
+          <span className="doc-title" />
+          <button className="icon-btn" onClick={() => setShowSettings(true)}>设置</button>
+        </div>
+        <Dropzone onFile={onFile} onOpen={onOpen} recent={recent}
+                  error={error} busy={busy} progress={progress} />
+        {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+      </>
+    );
+  }
+
+  const pct = bulk?.total ? bulk.done / bulk.total : 0;
+
+  return (
+    <>
+      <div className="bar">
+        <span className="wordmark">PDF 对照</span>
+        <span className="doc-title" title={doc.title}>{doc.title}</span>
+        <span className="folio">{folio} / {doc.page_count}</span>
+        <button className="icon-btn" onClick={translateAll} disabled={!!bulk}>
+          {bulk ? `翻译全文 ${bulk.done}/${bulk.total}` : "翻译全文"}
+        </button>
+        <button className="icon-btn" onClick={() => { setDoc(null); setPages([]); }}>
+          换一份
+        </button>
+        <button className="icon-btn" onClick={() => setShowSettings(true)}>设置</button>
+        {bulk && <div className="progress"><span style={{ width: `${pct * 100}%` }} /></div>}
+      </div>
+
+      {error && (
+        <div className="result err" style={{ margin: "8px 14px" }}>
+          <strong>出错　</strong>{error}
+        </div>
+      )}
+
+      <div className="reader">
+        <PdfPane paneRef={enPane} docId={doc.id} pages={pages}
+                 active={active} onPick={onPick} onScroll={onEnScroll} />
+        <Gutter enPane={enPane} zhPane={zhPane} active={active} />
+        <TransPane paneRef={zhPane} pages={pages} active={active}
+                   onPick={onPick} onScroll={onZhScroll} />
+      </div>
+
+      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+    </>
+  );
+}

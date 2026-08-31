@@ -19,6 +19,10 @@ from .extract import (
 from .merge import merge_paragraphs
 from .model import NO_TRANSLATE, Block, BlockType, Document, Image, Page
 
+#: 解析逻辑变更时递增。已持久化的文档模型据此失效并重新解析，
+#: 否则用户升级后仍会看到旧解析结果（如附录被误判为参考文献）。
+PARSER_VERSION = 2
+
 #: 平均每页可提取字符数低于此值，判定为扫描件，需 OCR（第一版不支持）
 TEXT_PDF_MIN_CHARS_PER_PAGE = 100
 
@@ -61,7 +65,7 @@ def parse(path: str | Path) -> Document:
         file_hash=file_hash(path),
         page_count=src.page_count,
         is_text_pdf=is_text,
-        meta=dict(src.metadata or {}),
+        meta={**dict(src.metadata or {}), "parser_version": PARSER_VERSION},
     )
     if not is_text:
         return doc      # 扫描件：调用方据此提示用户，OCR 留到第二期

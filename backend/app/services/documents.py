@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ..config import CACHE_DB, STORAGE
 from ..parser import parse
+from ..parser.pipeline import PARSER_VERSION
 from ..parser.model import Block, Document
 
 UPLOADS = STORAGE / "uploads"
@@ -53,6 +54,7 @@ class DocumentStore:
         if existing is not None:
             return existing
 
+
         doc = parse(dest)
         self._save(h, filename, doc)
         self._mem[h] = doc
@@ -82,11 +84,18 @@ class DocumentStore:
             return self._mem[h]
         with self._lock:
             row = self._conn.execute(
-                "SELECT model_json FROM documents WHERE file_hash=?", (h,)
+                "SELECT model_json, filename FROM documents WHERE file_hash=?", (h,)
             ).fetchone()
         if not row:
             return None
         doc = Document.from_dict(json.loads(row["model_json"]))
+        # 解析器升级后旧模型作废，否则会一直沿用过时的解析结果
+        if (doc.meta or {}).get("parser_version") != PARSER_VERSION:
+            pdf = self.pdf_path(h)
+            if not pdf.exists():
+                return None
+            doc = parse(pdf)
+            self._save(h, row["filename"] if "filename" in row.keys() else "", doc)
         self._mem[h] = doc
         return doc
 
