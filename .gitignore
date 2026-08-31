@@ -1,0 +1,30 @@
+# 密钥与本地配置 —— 绝不提交
+.env
+.env.local
+*.key
+
+# 用户数据与运行时产物
+storage/
+*.db
+*.sqlite3
+
+# 字体与词表（体积大，用脚本下载）
+data/fonts/*.otf
+data/fonts/*.ttf
+data/fonts/*.ttc
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# 系统
+.DS_Store
