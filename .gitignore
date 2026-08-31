@@ -28,3 +28,7 @@ dist/
 
 # 系统
 .DS_Store
+
+# 测试样本 PDF（体积大，不入库）
+*.pdf
+!docs/**/*.pdf
