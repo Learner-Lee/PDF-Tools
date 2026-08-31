@@ -119,12 +119,15 @@ def stitch_hyphen(
     if not m_tail or not m_head:
         # "Qwen3-" + "235B"：数字续写，直连且保留连字符
         return head + tail
+    # 最强判据：去掉连字符后的形式本就是文档里的词，说明这是换行断词。
+    # "Xiao-hongshu" -> "xiaohongshu" 全文出现数十次，必须合并，
+    # 否则同一个专有名词会裂成 Xiaohongshu / Xiao-hongshu / Xiaohong-shu 三个变体。
+    last = m_tail.group(1).rsplit("-", 1)[-1]
+    if f"{last}{m_head.group(1)}".lower() in words:
+        return head[:-1] + tail
     if f"{m_tail.group(1)}-{m_head.group(1)}".lower() in hyphen_vocab:
         return head + tail          # 复合词在文档别处整体出现过，连字符是真的
-    if (
-        m_tail.group(1).rsplit("-", 1)[-1].lower() in words
-        and m_head.group(1).lower() in words
-    ):
+    if last.lower() in words and m_head.group(1).lower() in words:
         # 断开的两半各自都是文档里的独立词（mass|produce）→ 复合词；
         # 若两半都不成词（classi|fiers）→ 换行断词
         return head + tail

@@ -24,6 +24,9 @@ _MERGEABLE = {BlockType.BODY, BlockType.LIST}
 
 
 def _can_merge(prev: Block, cur: Block) -> bool:
+    # 长标题被排版拆成多块，分别翻译会各自丢掉半句语义，必须先拼回整句
+    if prev.type is BlockType.TITLE and cur.type is BlockType.TITLE:
+        return True
     if prev.type not in _MERGEABLE or cur.type is not BlockType.BODY:
         return False
     if prev.lang != cur.lang:
