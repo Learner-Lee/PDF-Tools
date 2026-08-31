@@ -60,6 +60,15 @@ class OpenAICompatProvider:
         self._extra_ok = True
         self._client = httpx.Client(timeout=timeout)
 
+    @property
+    def cache_id(self) -> str:
+        """缓存归属标识。
+
+        用端点地址而非档案 id：决定译文的是"哪个服务的哪个模型"，
+        与用户给档案起的名字无关。档案改名、删了重建都不该让缓存失效。
+        """
+        return self.base_url.split("://", 1)[-1]
+
     def _headers(self) -> dict:
         h = {"Content-Type": "application/json"}
         if self.api_key:                       # 本地模型通常不需要密钥

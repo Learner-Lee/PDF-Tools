@@ -101,3 +101,13 @@ def test_parse_segments_tolerates_real_model_output():
     assert parse_segments("[0] 模仿输入的编号格式", 1) == {0: "模仿输入的编号格式"}
     assert parse_segments('```json\n[{"id":0,"zh":"围栏"}]\n```', 1) == {0: "围栏"}
     assert parse_segments("整段就是译文", 1) == {0: "整段就是译文"}
+
+
+def test_cache_id_ignores_profile_name():
+    """缓存归属看端点+模型，不看档案名 —— 改名或重建档案不该让缓存失效。"""
+    a = OpenAICompatProvider("https://api.x.com/v1", "k", "m", name="我的配置")
+    b = OpenAICompatProvider("https://api.x.com/v1", "k", "m", name="换个名字")
+    assert a.cache_id == b.cache_id
+
+    c = OpenAICompatProvider("https://other.com/v1", "k", "m", name="我的配置")
+    assert a.cache_id != c.cache_id

@@ -126,7 +126,9 @@ class Translator:
         pending: list[Block] = []
 
         # 先吃缓存：对照阅读看过的页，导出时不必重付一次钱
-        hits = self.cache.get_many([b.text for b in blocks], self.lang, self.provider.name, model)
+        hits = self.cache.get_many(
+            [b.text for b in blocks], self.lang, self.provider.cache_id, model
+        )
         for b in blocks:
             if b.text in hits:
                 b.translation = hits[b.text]
@@ -170,7 +172,7 @@ class Translator:
                 else:
                     result.failed.append(blk.id)
 
-            self.cache.put_many(fresh, self.lang, self.provider.name, model)
+            self.cache.put_many(fresh, self.lang, self.provider.cache_id, model)
             if on_progress:
                 on_progress(result)
 
