@@ -10,7 +10,6 @@ const SKIP = new Set(["header_footer", "watermark"]);
 function PageCanvas({ pdf, page, scale, active, onPick }) {
   const hostRef = useRef(null);
   const canvasRef = useRef(null);
-  const taskRef = useRef(null);
   const [near, setNear] = useState(false);
   const [failed, setFailed] = useState(false);
   const w = page.width * scale;
@@ -31,48 +30,49 @@ function PageCanvas({ pdf, page, scale, active, onPick }) {
   useEffect(() => {
     if (!near || !pdf) return;
     let cancelled = false;
+    let task = null;
 
     (async () => {
-      // 同一张 canvas 上并发 render，pdf.js 会抛错并留下空白页。
-      // 缩放变化时 ResizeObserver 可能连续触发，所以必须等上一次真正结束。
-      const prev = taskRef.current;
-      if (prev) {
-        prev.cancel();
-        await prev.promise.catch(() => {});   // 取消会 reject，属正常
-      }
-      if (cancelled) return;
-
       const p = await pdf.getPage(page.page + 1);
-      const cv = canvasRef.current;
-      if (cancelled || !cv) return;
+      if (cancelled) return;
 
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const vp = p.getViewport({ scale: scale * dpr });
-      cv.width = vp.width;
-      cv.height = vp.height;
-      cv.style.width = `${w}px`;
-      cv.style.height = `${h}px`;
 
-      const task = p.render({ canvasContext: cv.getContext("2d"), viewport: vp });
-      taskRef.current = task;
+      // 渲染到离屏画布，成功后整幅贴回。
+      // 直接渲染到可见画布有两个坑：同一画布并发 render 会被 pdf.js 拒绝；
+      // 而设置 canvas.width 会清空画面，渲染中途被取消就永久留一张白纸。
+      const off = document.createElement("canvas");
+      off.width = vp.width;
+      off.height = vp.height;
+
       try {
+        task = p.render({ canvasContext: off.getContext("2d"), viewport: vp });
         await task.promise;
-        setFailed(false);
       } catch (err) {
-        // 取消是正常流程；其余是真故障，要让用户看见而不是留一张白纸
         if (err?.name !== "RenderingCancelledException" && !cancelled) {
           console.error(`第 ${page.page + 1} 页渲染失败`, err);
           setFailed(true);
         }
-      } finally {
-        if (taskRef.current === task) taskRef.current = null;
+        return;
       }
+      if (cancelled) return;
+
+      const cv = canvasRef.current;
+      if (!cv) return;
+      cv.width = off.width;
+      cv.height = off.height;
+      cv.style.width = `${w}px`;
+      cv.style.height = `${h}px`;
+      cv.getContext("2d").drawImage(off, 0, 0);
+      setFailed(false);
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      task?.cancel?.();
+    };
   }, [near, pdf, page.page, scale, w, h]);
-
-  useEffect(() => () => taskRef.current?.cancel(), []);
 
   return (
     <div className="page-wrap" ref={hostRef} style={{ width: w, height: h }}

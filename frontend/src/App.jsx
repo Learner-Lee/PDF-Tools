@@ -8,6 +8,18 @@ import Settings from "./components/Settings";
 /** 滚到哪译到哪：当前页 + 预取后两页 */
 const PREFETCH = 2;
 
+/** 把译文与表格结果回填进页面数据 */
+function applyTranslations(pages, translations = {}, tables = {}) {
+  return pages.map((p) => ({
+    ...p,
+    blocks: p.blocks.map((b) => {
+      if (tables[b.id]) return { ...b, table: tables[b.id] };
+      if (translations[b.id]) return { ...b, translation: translations[b.id] };
+      return b;
+    }),
+  }));
+}
+
 function Dropzone({ onFile, onOpen, recent, error, busy, progress }) {
   const [over, setOver] = useState(false);
   const inputRef = useRef(null);
@@ -114,16 +126,9 @@ export default function App() {
       }
       if (!want.length) return;
       try {
-        const { translations } = await api.translate(doc.id, want);
-        if (!Object.keys(translations).length) return;
-        setPages((ps) =>
-          ps.map((p) => ({
-            ...p,
-            blocks: p.blocks.map((b) =>
-              translations[b.id] ? { ...b, translation: translations[b.id] } : b
-            ),
-          }))
-        );
+        const { translations, tables } = await api.translate(doc.id, want);
+        if (!Object.keys(translations).length && !Object.keys(tables || {}).length) return;
+        setPages((ps) => applyTranslations(ps, translations, tables));
       } catch (e) {
         want.forEach((i) => asked.current.delete(i));   // 失败可重试
         setError(e.message);
@@ -212,6 +217,21 @@ export default function App() {
     if (force) scrollTo(side === "en" ? zhPane : enPane, id, true);
   };
 
+  // 换了模型或译文不理想时的退路。命中缓存的部分不会重新花钱。
+  const retranslate = async () => {
+    if (!doc || bulk) return;
+    setError("");
+    try {
+      await api.retranslate(doc.id);
+      const { pages } = await api.pages(doc.id);
+      asked.current = new Set();
+      setPages(pages);
+      ensure(0);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   // ── 全文翻译 ──────────────────────────────────────────
   const translateAll = async () => {
     if (!doc || bulk) return;
@@ -223,13 +243,7 @@ export default function App() {
         else if (ev.type === "progress") setBulk({ done: ev.done, total: ev.total });
         else if (ev.type === "error") setError(ev.message);
         else if (ev.type === "done") {
-          const t = ev.translations;
-          setPages((ps) =>
-            ps.map((p) => ({
-              ...p,
-              blocks: p.blocks.map((b) => (t[b.id] ? { ...b, translation: t[b.id] } : b)),
-            }))
-          );
+          setPages((ps) => applyTranslations(ps, ev.translations, ev.tables));
           for (let i = 0; i < doc.page_count; i++) asked.current.add(i);
         }
       });
@@ -265,6 +279,9 @@ export default function App() {
         <span className="folio">{folio} / {doc.page_count}</span>
         <button className="icon-btn" onClick={translateAll} disabled={!!bulk}>
           {bulk ? `翻译全文 ${bulk.done}/${bulk.total}` : "翻译全文"}
+        </button>
+        <button className="icon-btn" onClick={retranslate} disabled={!!bulk}>
+          重新翻译
         </button>
         <button className="icon-btn" onClick={() => { setDoc(null); setPages([]); }}>
           换一份

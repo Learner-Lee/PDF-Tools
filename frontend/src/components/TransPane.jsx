@@ -1,7 +1,33 @@
 /** 右栏完全不呈现的块：纯噪音，出现反而干扰 */
 const DROP = new Set(["header_footer", "watermark"]);
 
+/** 表格：保住行列结构，逐格显示译文；未译的格子（纯数字）显示原文 */
+function TableView({ table }) {
+  if (!table?.rows?.length) return null;
+  const rows = table.zh || table.rows;
+  const head = table.header_rows || 1;
+  return (
+    <div className="table-wrap">
+      <table className="zh-table">
+        {head > 0 && (
+          <thead>
+            {rows.slice(0, head).map((r, i) => (
+              <tr key={i}>{r.map((c, j) => <th key={j}>{c}</th>)}</tr>
+            ))}
+          </thead>
+        )}
+        <tbody>
+          {rows.slice(head).map((r, i) => (
+            <tr key={i}>{r.map((c, j) => <td key={j}>{c}</td>)}</tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Body({ block }) {
+  if (block.type === "table") return <TableView table={block.table} />;
   if (!block.translate) {
     // 公式、代码、以及原本就是中文的段落：原样保留，但仍占位，
     // 否则左右两栏会在这些地方失去对应关系

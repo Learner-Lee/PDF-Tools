@@ -39,6 +39,9 @@ export const api = {
   pages: (id) => fetch(`/api/documents/${id}/pages`).then(j),
   fileUrl: (id) => `/api/documents/${id}/file`,
 
+  retranslate: (id) =>
+    fetch(`/api/documents/${id}/retranslate`, { method: "POST" }).then(j),
+
   translate: (id, pages) =>
     fetch(`/api/documents/${id}/translate`, {
       method: "POST",

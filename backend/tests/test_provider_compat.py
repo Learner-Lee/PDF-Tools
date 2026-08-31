@@ -111,3 +111,15 @@ def test_cache_id_ignores_profile_name():
 
     c = OpenAICompatProvider("https://other.com/v1", "k", "m", name="我的配置")
     assert a.cache_id != c.cache_id
+
+
+def test_strips_echoed_segment_marker():
+    """模型会把输入的 [N] 标号抄进译文值里，必须剥掉。"""
+    raw = '[{"id":0,"zh":"[0] 条件"},{"id":1,"zh":"[1] GPT-5"}]'
+    assert parse_segments(raw, 2) == {0: "条件", 1: "GPT-5"}
+
+
+def test_keeps_unrelated_bracket_numbers():
+    """编号与段号不一致时是正文内容，不能动。"""
+    raw = '[{"id":0,"zh":"[12] 见参考文献"}]'
+    assert parse_segments(raw, 1) == {0: "[12] 见参考文献"}

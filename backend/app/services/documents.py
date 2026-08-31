@@ -154,6 +154,7 @@ def page_payload(doc: Document, n: int) -> dict:
             "translate": b.translate,
             "text": b.text,
             "translation": b.translation,
+            "table": b.table,
         })
     return {
         "page": n,

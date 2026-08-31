@@ -491,3 +491,39 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: 1px dashed var(--rail-soft);
   border-radius: 3px;
 }
+
+/* 表格：宽表在自己的容器里横向滚动，页面本身绝不横向滚 */
+.table-wrap {
+  overflow-x: auto;
+  margin: 2px 0 6px;
+  border: 1px solid var(--rail-soft);
+  border-radius: 3px;
+}
+.zh-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+.zh-table th,
+.zh-table td {
+  padding: 6px 9px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--rail-soft);
+  white-space: nowrap;
+}
+/* 文字多的表格允许折行，否则横向滚太远 */
+.zh-table td:not(:first-child):not(:nth-child(2)) { white-space: normal; }
+.zh-table thead th {
+  font-weight: 600;
+  color: var(--ink);
+  border-bottom: 1px solid var(--rail);
+  background: color-mix(in srgb, var(--rail-soft) 45%, transparent);
+  position: sticky;
+  top: 0;
+}
+.zh-table tbody tr:last-child td { border-bottom: 0; }
+.zh-table tbody tr:hover td { background: var(--mark-wash); }

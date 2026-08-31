@@ -98,6 +98,8 @@ def classify_page(
 ) -> bool:
     """就地分类整页。返回离开本页时是否仍处于参考文献区。"""
     for b in blocks:
+        if b.type is BlockType.TABLE:      # 表格已在管线中定型
+            continue
         if in_references and _ends_references(b):
             in_references = False
         b.type = classify(b, page_height, page_width, body_size, in_references)

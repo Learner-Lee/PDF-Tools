@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from ..parser.model import Block
@@ -48,6 +49,14 @@ class TranslateResult:
     failed: list[str] = field(default_factory=list)
     usage: Usage = field(default_factory=Usage)
     api_calls: int = 0
+
+
+#: 不含字母的格子（纯数字、百分比、破折号）无需翻译，送去只会被改坏
+_RE_HAS_LETTER = re.compile(r"[A-Za-z\u4e00-\u9fff]")
+
+
+def needs_translation(text: str) -> bool:
+    return bool(_RE_HAS_LETTER.search(text or ""))
 
 
 def _batch(blocks: list[Block]) -> list[list[Block]]:
@@ -176,6 +185,39 @@ class Translator:
             if on_progress:
                 on_progress(result)
 
+        return result
+
+    def translate_tables(self, blocks: list[Block]) -> TranslateResult:
+        """翻译表格单元格。
+
+        逐格翻译而非整表丢给模型：表格是结构，行列必须原样保住。
+        纯数字的格子直接跳过 —— 送去只会被改坏，还白花 token。
+        """
+        cells: list[Block] = []
+        seen: set[str] = set()
+        for blk in blocks:
+            t = blk.table or {}
+            for row in t.get("rows", []):
+                for cell in row:
+                    text = (cell or "").strip()
+                    if text and text not in seen and needs_translation(text):
+                        seen.add(text)
+                        # 借用 Block 复用批处理与缓存，不新增一套并行实现
+                        cells.append(
+                            Block(id=f"cell{len(cells)}", page=blk.page, bbox=blk.bbox,
+                                  type=blk.type, text=text)
+                        )
+
+        result = self.translate_blocks(cells)
+        table_of = {c.text: c.translation for c in cells if c.translation}
+
+        for blk in blocks:
+            t = blk.table or {}
+            t["zh"] = [
+                [table_of.get((c or "").strip(), c) for c in row]
+                for row in t.get("rows", [])
+            ]
+            blk.table = t
         return result
 
     def close(self) -> None:

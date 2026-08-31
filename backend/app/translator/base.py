@@ -136,6 +136,19 @@ class OpenAICompatProvider:
 _RE_NUMBERED = re.compile(r"^\s*\[(\d+)\]\s*(.*)$")
 
 
+def _strip_marker(text: str, idx: int) -> str:
+    """剥掉模型回显进译文里的编号标记。
+
+    输入段落用 "[N] 原文" 标号，模型有时把这个标记原样抄进 JSON 的译文值里，
+    得到 "[1] GPT-5" 这种结果。只在编号与该段一致时剥离，
+    以免误伤正文里本来就有的引用标记。
+    """
+    m = _RE_NUMBERED.match(text)
+    if m and int(m.group(1)) == idx:
+        return m.group(2).strip()
+    return text
+
+
 def parse_json_array(raw: str) -> list[dict]:
     """剥离可能的代码围栏后解析 JSON 数组（严格路径）。"""
     text = _RE_FENCE.sub("", raw.strip())
@@ -165,6 +178,7 @@ def parse_segments(raw: str, expected: int) -> dict[int, str]:
                 idx, zh = int(it["id"]), str(it["zh"]).strip()
             except (KeyError, ValueError, TypeError):
                 continue
+            zh = _strip_marker(zh, idx)
             if zh:
                 out[idx] = zh
 

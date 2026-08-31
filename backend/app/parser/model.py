@@ -13,6 +13,7 @@ class BlockType(str, Enum):
     BODY = "body"
     LIST = "list"
     CAPTION = "caption"            # 图表标题
+    TABLE = "table"                # 还原出网格的表格
     CODE = "code"                  # 等宽字体块
     MATH = "math"                  # 行间公式
     REFERENCE = "reference"        # 参考文献条目
@@ -55,6 +56,8 @@ class Block:
     order: int = 0                 # 页内阅读顺序
     lang: str = "en"               # en | zh | mixed
     translate: bool = True
+    #: 表格块专用：{"rows": [[单元格文本]], "header_rows": n, "zh": [[译文]]}
+    table: dict | None = None
     merged_from: list[str] = field(default_factory=list)   # 作为段首，并入了哪些后续块
     merged_into: str | None = None                         # 作为续块，被并入了哪个段首
     translation: str | None = None
@@ -120,6 +123,7 @@ class Document:
                     spans=[Span(**{**s, "bbox": tuple(s["bbox"])}) for s in bd.get("spans", [])],
                     column=bd.get("column", 0), order=bd.get("order", 0),
                     lang=bd.get("lang", "en"), translate=bd.get("translate", True),
+                    table=bd.get("table"),
                     merged_from=bd.get("merged_from") or [],
                     merged_into=bd.get("merged_into"),
                     translation=bd.get("translation"),

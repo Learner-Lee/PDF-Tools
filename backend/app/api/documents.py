@@ -62,6 +62,12 @@ async def upload(file: UploadFile = File(...)):
     return _summary(doc, file.filename or "")
 
 
+def _tables_for(doc, pages: set[int]):
+    return [b for b in doc.blocks()
+            if b.type.value == "table" and b.page in pages
+            and not (b.table or {}).get("zh")]
+
+
 def _need(doc_id: str):
     doc = get_documents().load(doc_id)
     if doc is None:
@@ -106,8 +112,9 @@ def translate_pages(doc_id: str, body: TranslateIn):
     """按页翻译（对照阅读的懒加载入口）。已译或已缓存的块不会重复调用 API。"""
     doc = _need(doc_id)
     todo = blocks_for_pages(doc, body.pages)
-    if not todo:
-        return {"translations": {}, "translated": 0, "from_cache": 0}
+    tables = _tables_for(doc, set(body.pages))
+    if not todo and not tables:
+        return {"translations": {}, "tables": {}, "translated": 0, "from_cache": 0}
     try:
         tr = Translator()
     except ProviderError as exc:
@@ -115,11 +122,16 @@ def translate_pages(doc_id: str, body: TranslateIn):
     try:
         tr.prepare_glossary(doc.file_hash, [b for b in doc.blocks() if b.translate])
         r = tr.translate_blocks(todo)
+        if tables:
+            rt = tr.translate_tables(tables)
+            r.translated += rt.translated
+            r.from_cache += rt.from_cache
     finally:
         tr.close()
     get_documents().persist(doc)
     return {
         "translations": {b.id: b.translation for b in todo if b.translation},
+        "tables": {b.id: b.table for b in tables},
         "translated": r.translated,
         "from_cache": r.from_cache,
         "failed": r.failed,
@@ -136,7 +148,8 @@ async def translate_all(doc_id: str):
         raise HTTPException(400, str(exc)) from exc
 
     todo = [b for b in doc.blocks() if b.translate and not b.translation]
-    total = len(todo)
+    tables = _tables_for(doc, set(range(doc.page_count)))
+    total = len(todo) + sum(len(t.table["rows"]) for t in tables)
 
     async def stream():
         loop = asyncio.get_running_loop()
@@ -154,11 +167,16 @@ async def translate_all(doc_id: str):
                     )
 
                 res = tr.translate_blocks(todo, on_progress=on_progress)
+                if tables:
+                    rt = tr.translate_tables(tables)
+                    res.translated += rt.translated
+                    res.from_cache += rt.from_cache
                 get_documents().persist(doc)
                 loop.call_soon_threadsafe(queue.put_nowait, {
                     "type": "done", "translated": res.translated,
                     "from_cache": res.from_cache, "failed": res.failed,
                     "translations": {b.id: b.translation for b in todo if b.translation},
+                    "tables": {b.id: b.table for b in tables},
                 })
             except Exception as exc:
                 loop.call_soon_threadsafe(
@@ -181,6 +199,25 @@ async def translate_all(doc_id: str):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/{doc_id}/retranslate")
+def retranslate(doc_id: str):
+    """清空已有译文，下次请求重新翻译。
+
+    换了模型、或某段译得不对时的退路。命中缓存的部分不会重新花钱；
+    要连缓存一起绕过，需在设置里换用别的模型。
+    """
+    doc = _need(doc_id)
+    n = 0
+    for b in doc.blocks():
+        if b.translation:
+            b.translation = None
+            n += 1
+        if b.table and b.table.pop("zh", None) is not None:
+            n += 1
+    get_documents().persist(doc)
+    return {"ok": True, "cleared": n}
 
 
 @router.delete("/{doc_id}")
