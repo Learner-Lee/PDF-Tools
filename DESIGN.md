@@ -552,3 +552,26 @@ MIT 许可，77 万词条。再补一份 COCA 前两万的词频序用于「认�
 - **译文与原文一字不差时不替换**：抹掉再画一遍相同内容只有风险没有收益
   （模型名、纯数字的表格碎片本就不该翻）。
 - 未译比例低于 90% 直接拒绝导出并说明还差多少段 —— 半篇中文半篇英文没有意义。
+
+
+---
+
+## 附录 H：跨平台
+
+macOS / Windows / Linux 均可运行。相关的实现约束：
+
+- **路径**一律用 `pathlib.Path` 与 `/` 运算符，无硬编码分隔符
+- **文本读写**全部显式 `encoding="utf-8"`。不显式指定的话，
+  Windows 会按系统代码页（简体中文为 cp936）解码，中文数据直接读崩
+- **无任何 OS 特定 API**（无 `os.system`、`subprocess`、`fcntl`、`chmod`）
+- **导出 PDF 的中文字体由 PyMuPDF 自带**（Droid Sans Fallback），
+  不依赖系统装了什么字体，三个平台产出一致
+- 依赖全部有 Windows wheel；`uvicorn[standard]` 的 uvloop 带平台标记，
+  Windows 上自动跳过
+
+**前端字体栈**按 macOS → 开源 → Windows 依次兜底。中文衬线原先只写了
+`Songti SC` 等 macOS 字体，Windows 上会掉到 Times New Roman（无中文字形），
+只能靠系统字体链接救场、字重与行高都不受控，现已补上 `SimSun` / `NSimSun`。
+
+> 实机只在 macOS 上验证过。Windows 侧是按上述约束逐条检查代码得出的结论，
+> 未做真机测试。

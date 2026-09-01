@@ -16,10 +16,15 @@
   --ok:         #2f7a55;
 
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  --sans: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC",
-          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+          "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+          "Microsoft JhengHei", sans-serif;
+  /* 中文衬线：macOS / 开源 / Windows 依次兜底。
+     只写前两组的话，Windows 上会掉到 Times New Roman（无中文字形），
+     全靠系统字体链接救场，字重与行高都不受控。 */
   --serif-cjk: "Songti SC", "Noto Serif SC", "Source Han Serif SC",
-               "Source Han Serif CN", STSong, serif;
+               "Source Han Serif CN", STSong,
+               SimSun, NSimSun, "MS Mincho", serif;
 
   --bar: 46px;
   --gutter: 30px;

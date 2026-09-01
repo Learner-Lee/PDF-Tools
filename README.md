@@ -6,17 +6,32 @@
 
 ## 快速开始
 
+需要 Python 3.10+ 与 Node 18+。macOS、Windows、Linux 都可以跑。
+
+**macOS / Linux**
+
 ```bash
-# 后端
 python3 -m venv .venv
 .venv/bin/pip install -r backend/requirements.txt
 
-# 前端（首次需要构建一次，之后后端会直接托管）
 cd frontend && npm install && npm run build && cd ..
 
-# 启动
 cd backend && ../.venv/bin/python -m uvicorn app.main:app --port 8731
 ```
+
+**Windows（PowerShell）**
+
+```powershell
+py -m venv .venv
+.venv\Scripts\pip install -r backend\requirements.txt
+
+cd frontend; npm install; npm run build; cd ..
+
+cd backend; ..\.venv\Scripts\python -m uvicorn app.main:app --port 8731
+```
+
+后面文档里写 `../.venv/bin/python` 的地方，Windows 一律换成
+`..\.venv\Scripts\python`。
 
 打开 http://localhost:8731 即可。
 
@@ -27,6 +42,8 @@ cd backend
 ../.venv/bin/python -m scripts.fetch_wordlists   # 下载公开词表，约 70 MB
 ../.venv/bin/python -m scripts.build_vocab       # 编译成 data/vocab.db，约 39 MB
 ```
+
+Windows 把 `../.venv/bin/python` 换成 `..\.venv\Scripts\python`。
 
 不构建也能用对照翻译，只是难词模式会提示去构建。词库全程离线，不调用任何 API。
 
