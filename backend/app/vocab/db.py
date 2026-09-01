@@ -20,6 +20,12 @@ _PHONETIC_FIX = str.maketrans({"ә": "ə", "ɔ": "ɔ", "ʃ": "ʃ", "ɑ": "ɑ"})
 _RE_TOKEN = re.compile(r"[A-Za-z][A-Za-z'\-]*")
 #: 释义里的学科标注，如 "[医] "、"[计] "
 _RE_FIELD_TAG = re.compile(r"^\[[^\]]{1,6}\]\s*")
+#: 释义开头的词性标记，如 "vt. "、"n. "、"a. "
+_RE_POS_TAG = re.compile(
+    r"^(?:n|v|vt|vi|a|ad|adj|adv|prep|conj|pron|int|num|art|aux|abbr)\.\s*", re.I
+)
+#: 义项分隔
+_RE_SENSE_SPLIT = re.compile(r"[,，;；、]")
 
 
 @dataclass
@@ -50,6 +56,26 @@ class Entry:
         if plain:
             return "；".join(plain[:limit])
         return "；".join(_RE_FIELD_TAG.sub("", l).strip() for l in raw[:limit])
+
+    def brief(self, max_chars: int = 8) -> str:
+        """行内显示用的短释义。
+
+        行内标注要跟在原词后面，必须短到不撑破行距 ——
+        "vt. 温和, 缓和, 减轻" 取成 "温和,缓和"。
+        """
+        first = self.gloss(limit=1)
+        first = _RE_FIELD_TAG.sub("", first).strip()
+        first = _RE_POS_TAG.sub("", first).strip()
+        if not first:
+            return ""
+        parts = [p.strip() for p in _RE_SENSE_SPLIT.split(first) if p.strip()]
+        out = ""
+        for p in parts[:2]:
+            nxt = p if not out else f"{out},{p}"
+            if len(nxt) > max_chars and out:
+                break
+            out = nxt
+        return out[:max_chars] or parts[0][:max_chars]
 
 
 class VocabDB:

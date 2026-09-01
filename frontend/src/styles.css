@@ -566,14 +566,31 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .en-heading { font-size: 16px; font-weight: 600; }
 .en-small   { font-size: 13.5px; color: var(--ink-soft); }
 
-/* 难词只加一条虚下划线：读起来不断，想看时才看 */
+/* 原词与其行内中文是一个整体：不在中间断行，点哪一半都能开卡片 */
+.hw-pair {
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hw-pair:hover .hw { background: var(--mark-wash); }
+.hw-pair.is-collected .hw {
+  border-bottom-style: solid;
+  background: var(--mark-wash);
+}
+
 .hw {
   border-bottom: 1px dashed var(--mark);
-  cursor: help;
   padding-bottom: 1px;
 }
-.hw:hover { background: var(--mark-wash); }
-.hw.is-collected { border-bottom-style: solid; background: var(--mark-wash); }
+
+/* 行内中文：比正文小一号、颜色更淡，扫读时能跳过去 */
+.hw-zh {
+  font-family: var(--sans);
+  font-size: 0.78em;
+  color: var(--mark);
+  letter-spacing: 0.01em;
+  margin-left: 1px;
+  cursor: pointer;
+}
 
 .hw-card {
   position: absolute;
@@ -616,6 +633,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--ink-soft);
 }
 .hw-add:hover { border-color: var(--mark); color: var(--mark); }
+
+.hw-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  border: 0;
+  background: transparent;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ink-faint);
+  padding: 2px 4px;
+}
+.hw-close:hover { color: var(--ink); }
 
 /* 生词本 */
 .book { max-height: 46vh; overflow-y: auto; margin-bottom: 4px; }

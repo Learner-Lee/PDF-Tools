@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /** 难词模式下不呈现的块：与对照模式保持一致 */
 const DROP = new Set(["header_footer", "watermark", "author"]);
@@ -32,22 +32,43 @@ export default function HardWordPane({
   paneRef, pages, hardwords, active, onPick, onScroll, collected, onCollect,
 }) {
   const [card, setCard] = useState(null);
-  const hideTimer = useRef(0);
+  const cardRef = useRef(null);
 
-  const show = (e, word, blockText) => {
-    clearTimeout(hideTimer.current);
+  // 点击其他地方或按 Esc 关闭。卡片改成点击触发后，必须给出明确的关闭方式。
+  useEffect(() => {
+    if (!card) return;
+    const onDown = (e) => {
+      if (!cardRef.current?.contains(e.target) && !e.target.closest(".hw-pair")) {
+        setCard(null);
+      }
+    };
+    const onKey = (e) => e.key === "Escape" && setCard(null);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [card]);
+
+  const toggle = (e, word, blockText) => {
+    e.stopPropagation();               // 否则会触发块级的对位跳转
+    if (card?.word.start === word.start && card?.blockId === word._blockId) {
+      return setCard(null);            // 再点一次收起
+    }
+    const el = paneRef.current;
     const r = e.currentTarget.getBoundingClientRect();
-    const pane = paneRef.current.getBoundingClientRect();
+    const pane = el.getBoundingClientRect();
+    // 卡片是栏内的绝对定位元素，坐标要用内容坐标而非视口坐标 ——
+    // 少加 scrollTop 的话，只有栏停在顶部时位置才是对的。
+    // 用内容坐标后卡片随内容滚动，始终贴着那个词。
     setCard({
       word,
+      blockId: word._blockId,
       context: sentenceAround(blockText, word.start, word.end),
-      // 贴在词下方；靠近右边缘时向左收，避免溢出栏外
-      left: Math.min(r.left - pane.left, pane.width - 300),
-      top: r.bottom - pane.top + 6,
+      left: Math.max(0, Math.min(r.left - pane.left + el.scrollLeft, el.clientWidth - 300)),
+      top: r.bottom - pane.top + el.scrollTop + 6,
     });
-  };
-  const hide = () => {
-    hideTimer.current = setTimeout(() => setCard(null), 160);
   };
 
   return (
@@ -76,15 +97,31 @@ export default function HardWordPane({
                     <p className={`en ${kind}`}>
                       {segments(b.text, words).map((s, i) =>
                         s.word ? (
+                          // 点击区域包住原词与它的行内中文：
+                          // 点中文是最自然的手势，不能反而把卡片关掉
                           <span
                             key={i}
                             className={
-                              "hw" + (collected.has(s.word.lemma) ? " is-collected" : "")
+                              "hw-pair" +
+                              (collected.has(s.word.lemma) ? " is-collected" : "")
                             }
-                            onMouseEnter={(e) => show(e, s.word, b.text)}
-                            onMouseLeave={hide}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`${s.word.lemma}：${s.word.gloss}`}
+                            onClick={(e) =>
+                              toggle(e, { ...s.word, _blockId: b.id }, b.text)
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                toggle(e, { ...s.word, _blockId: b.id }, b.text);
+                              }
+                            }}
                           >
-                            {s.text}
+                            <span className="hw">{s.text}</span>
+                            {s.word.brief && (
+                              <span className="hw-zh">（{s.word.brief}）</span>
+                            )}
                           </span>
                         ) : (
                           <span key={i}>{s.text}</span>
@@ -101,9 +138,9 @@ export default function HardWordPane({
       {card && (
         <div
           className="hw-card"
+          ref={cardRef}
           style={{ left: card.left, top: card.top }}
-          onMouseEnter={() => clearTimeout(hideTimer.current)}
-          onMouseLeave={hide}
+          onClick={(e) => e.stopPropagation()}
         >
           <div className="hw-head">
             <b>{card.word.lemma}</b>
@@ -119,6 +156,9 @@ export default function HardWordPane({
             onClick={() => onCollect(card.word, card.context)}
           >
             {collected.has(card.word.lemma) ? "已在生词本 · 移出" : "收进生词本"}
+          </button>
+          <button className="hw-close" aria-label="关闭" onClick={() => setCard(null)}>
+            ×
           </button>
         </div>
       )}

@@ -94,7 +94,8 @@ class HardWord:
     lemma: str
     phonetic: str = ""
     pos: str = ""
-    gloss: str = ""
+    gloss: str = ""        # 卡片里的完整释义
+    brief: str = ""        # 行内跟在原词后的短释义
     coca: int = 0
     tag: str = ""
 
@@ -151,6 +152,6 @@ def analyze(
         out.append(HardWord(
             start=start, end=end, surface=surface, lemma=lemma,
             phonetic=entry.phonetic, pos=entry.pos, gloss=gloss,
-            coca=entry.coca, tag=entry.tag,
+            brief=entry.brief(), coca=entry.coca, tag=entry.tag,
         ))
     return out
