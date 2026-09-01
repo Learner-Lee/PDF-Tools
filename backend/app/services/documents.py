@@ -123,6 +123,13 @@ class DocumentStore:
             self._conn.execute("DELETE FROM documents WHERE file_hash=?", (h,))
             self._conn.commit()
 
+    def filename(self, h: str) -> str:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT filename FROM documents WHERE file_hash=?", (h,)
+            ).fetchone()
+        return (row["filename"] if row else "") or h[:12]
+
     @staticmethod
     def pdf_path(h: str) -> Path:
         return UPLOADS / f"{h}.pdf"

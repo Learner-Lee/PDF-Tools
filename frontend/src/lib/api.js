@@ -39,6 +39,28 @@ export const api = {
   pages: (id) => fetch(`/api/documents/${id}/pages`).then(j),
   fileUrl: (id) => `/api/documents/${id}/file`,
 
+  /** 导出译稿。返回 null 表示已开始下载，否则返回给用户看的错误说明。 */
+  async exportDoc(id, format, filename) {
+    const r = await fetch(`/api/documents/${id}/export?format=${format}`);
+    if (!r.ok) {
+      try {
+        return (await r.json()).detail || `导出失败（HTTP ${r.status}）`;
+      } catch {
+        return `导出失败（HTTP ${r.status}）`;
+      }
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    return null;
+  },
+
   retranslate: (id) =>
     fetch(`/api/documents/${id}/retranslate`, { method: "POST" }).then(j),
 

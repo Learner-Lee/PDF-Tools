@@ -83,6 +83,7 @@ export default function App() {
   const [hardwords, setHardwords] = useState({});
   const [collected, setCollected] = useState(new Set());
   const [showBook, setShowBook] = useState(false);
+  const [exporting, setExporting] = useState("");
 
   const enPane = useRef(null);
   const zhPane = useRef(null);
@@ -297,6 +298,21 @@ export default function App() {
     }
   };
 
+  const exportDoc = async (format) => {
+    if (!doc || exporting) return;
+    setError("");
+    setExporting(format);
+    try {
+      const base = (doc.filename || doc.title || "document").replace(/\.pdf$/i, "");
+      const msg = await api.exportDoc(doc.id, format, `${base}.zh.${format}`);
+      if (msg) setError(msg);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setExporting("");
+    }
+  };
+
   // ── 全文翻译 ──────────────────────────────────────────
   const translateAll = async () => {
     if (!doc || bulk) return;
@@ -359,6 +375,16 @@ export default function App() {
             {bulk ? `翻译全文 ${bulk.done}/${bulk.total}` : "翻译全文"}
           </button>
         )}
+        <button className="icon-btn" onClick={() => exportDoc("pdf")}
+                disabled={!!bulk || !!exporting}
+                title="保留原版式的中文 PDF">
+          {exporting === "pdf" ? "导出中…" : "导出 PDF"}
+        </button>
+        <button className="icon-btn" onClick={() => exportDoc("md")}
+                disabled={!!bulk || !!exporting}
+                title="丢版式但内容完整，可二次编辑">
+          {exporting === "md" ? "导出中…" : "Markdown"}
+        </button>
         <button className="icon-btn" onClick={retranslate} disabled={!!bulk}>
           重新翻译
         </button>

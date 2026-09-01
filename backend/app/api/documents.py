@@ -8,6 +8,9 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+
+from ..config import STORAGE
+from ..renderer import render_markdown, render_pdf
 from pydantic import BaseModel
 
 from ..services.documents import blocks_for_pages, get_documents, page_payload
@@ -21,7 +24,7 @@ def _summary(doc, filename: str = "") -> dict:
     done = sum(1 for b in doc.blocks() if b.translate and b.translation)
     return {
         "id": doc.file_hash,
-        "filename": filename,
+        "filename": filename or get_documents().filename(doc.file_hash),
         "page_count": doc.page_count,
         "is_text_pdf": doc.is_text_pdf,
         "title": (doc.meta or {}).get("title") or filename,
@@ -198,6 +201,52 @@ async def translate_all(doc_id: str):
         stream(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+EXPORTS = STORAGE / "exports"
+
+#: 已译比例低于此值就不给导出 —— 半篇中文半篇英文的成品没有意义
+_MIN_TRANSLATED = 0.9
+
+
+@router.get("/{doc_id}/export")
+def export(doc_id: str, format: str = "pdf"):
+    """导出译稿。
+
+    format=pdf 保留原版式；format=md 是无条件附带的保底产物，
+    丢版式但内容完整，原版式重建在某些文档上失真时仍有东西可用。
+    """
+    if format not in ("pdf", "md"):
+        raise HTTPException(400, "format 只能是 pdf 或 md")
+    doc = _need(doc_id)
+
+    total = sum(1 for b in doc.blocks() if b.translate)
+    done = sum(1 for b in doc.blocks() if b.translate and b.translation)
+    if total and done / total < _MIN_TRANSLATED:
+        raise HTTPException(
+            409,
+            f"还有 {total - done} 段未翻译（共 {total} 段）。"
+            "请先点「翻译全文」，再导出。",
+        )
+
+    # 用上传时的原始文件名，而不是内部存储用的 hash
+    stem = Path(get_documents().filename(doc.file_hash)).stem or "document"
+    if format == "md":
+        out = EXPORTS / f"{doc.file_hash[:12]}.md"
+        render_markdown(doc, out)
+        return FileResponse(out, media_type="text/markdown; charset=utf-8",
+                            filename=f"{stem}.zh.md")
+
+    out = EXPORTS / f"{doc.file_hash[:12]}.zh.pdf"
+    report = render_pdf(doc, out)
+    return FileResponse(
+        out, media_type="application/pdf", filename=f"{stem}.zh.pdf",
+        headers={
+            "X-Pages-In": str(report.pages_in),
+            "X-Pages-Out": str(report.pages_out),
+            "X-Blocks": str(report.blocks_placed),
+        },
     )
 
 
