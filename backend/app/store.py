@@ -65,18 +65,28 @@ class SettingsStore:
 
     # ---------- 种子 ----------
 
+    #: 一眼可辨的占位符，不能当成真密钥
+    _PLACEHOLDER = ("sk-xxxxxxxx", "sk-xxx", "your-api-key", "changeme")
+
     def _seed_from_env(self) -> None:
-        """库为空时，用 .env 建一个初始档案，让开箱即用。"""
+        """库为空时，用 .env 建一个初始档案，让开箱即用。
+
+        占位符要当成"没填"：否则全新部署会显示"已配置"，
+        用户以为能用，一调就报鉴权失败。
+        """
         with self._lock:
             n = self._conn.execute("SELECT COUNT(*) FROM providers").fetchone()[0]
         if n or not env.qwen_base_url:
             return
+        key = env.qwen_api_key.strip()
+        if key in self._PLACEHOLDER or "xxxx" in key.lower():
+            key = ""
         self.upsert(
             ProviderProfile(
                 id="default",
                 label="我的 Qwen",
                 base_url=env.qwen_base_url,
-                api_key=env.qwen_api_key,
+                api_key=key,
                 model_translate=env.qwen_model_translate,
                 model_gloss=env.qwen_model_gloss,
                 extra_body={"enable_thinking": False},

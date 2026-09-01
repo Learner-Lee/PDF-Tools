@@ -34,10 +34,17 @@ def health():
     from .store import get_store
 
     active = get_store().active()
+    # 本地模型（Ollama / llama.cpp）不需要密钥，所以只要有 base_url 就算可用；
+    # 但云端服务缺密钥等于没配置，不能报告成已就绪
+    ready = active is not None and bool(active.base_url) and (
+        bool(active.api_key) or "localhost" in active.base_url
+        or "127.0.0.1" in active.base_url
+    )
     return {
         "ok": True,
-        "provider_configured": active is not None and bool(active.api_key or active.base_url),
+        "provider_configured": ready,
         "active_provider": active.label if active else None,
+        "needs_api_key": active is not None and not ready,
     }
 
 

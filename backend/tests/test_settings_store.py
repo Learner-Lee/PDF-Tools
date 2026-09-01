@@ -47,3 +47,35 @@ def test_extra_body_roundtrips(tmp_path):
     s.upsert(ProviderProfile(id="a", label="A", base_url="https://x/v1",
                              extra_body={"enable_thinking": False}))
     assert s.get("a").extra_body == {"enable_thinking": False}
+
+
+def test_placeholder_env_key_is_treated_as_unset(tmp_path, monkeypatch):
+    """全新部署时 .env 里是占位符，不能报告成"已配置"。
+
+    否则用户以为能用，一调就鉴权失败，还查不出原因。
+    """
+    import app.store as store_mod
+
+    class Env:
+        qwen_base_url = "https://api.example.com/v1"
+        qwen_model_translate = "m"
+        qwen_model_gloss = "m"
+        qwen_api_key = "sk-xxxxxxxx"
+
+    monkeypatch.setattr(store_mod, "env", Env)
+    s = SettingsStore(tmp_path / "seed.db")
+    assert s.active().api_key == ""
+
+
+def test_real_env_key_is_seeded(tmp_path, monkeypatch):
+    import app.store as store_mod
+
+    class Env:
+        qwen_base_url = "https://api.example.com/v1"
+        qwen_model_translate = "m"
+        qwen_model_gloss = "m"
+        qwen_api_key = "sk-sp-real-key-123"
+
+    monkeypatch.setattr(store_mod, "env", Env)
+    s = SettingsStore(tmp_path / "seed.db")
+    assert s.active().api_key == "sk-sp-real-key-123"
