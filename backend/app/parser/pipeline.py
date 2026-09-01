@@ -16,13 +16,13 @@ from .extract import (
     extract_blocks,
     join_lines,
 )
-from .merge import merge_paragraphs
-from .model import NO_TRANSLATE, Block, BlockType, Document, Image, Page
+from .merge import merge_paragraphs, merge_references
+from .model import Block, BlockType, Document, Image, Page, apply_translate_policy
 from .tables import find_tables
 
 #: 解析逻辑变更时递增。已持久化的文档模型据此失效并重新解析，
 #: 否则用户升级后仍会看到旧解析结果（如附录被误判为参考文献）。
-PARSER_VERSION = 3
+PARSER_VERSION = 5
 
 #: 平均每页可提取字符数低于此值，判定为扫描件，需 OCR（第一版不支持）
 TEXT_PDF_MIN_CHARS_PER_PAGE = 100
@@ -156,18 +156,11 @@ def parse(path: str | Path) -> Document:
         _lay.assign_columns(page.blocks, pw, page.columns)
         ordered = _lay.reading_order(page.blocks, page.columns)
 
-        for b in page.blocks:
-            # 中文块已经是目标语言，再翻一遍只会得到垃圾
-            # 表格走单元格级翻译，不作为整段文本送去
-            b.translate = (
-                b.type not in NO_TRANSLATE
-                and b.type is not BlockType.TABLE
-                and b.lang != "zh"
-            )
-
         global_order.extend(ordered)
         doc.pages.append(page)
 
     merge_paragraphs(global_order, hyphen_vocab, words)
+    merge_references(global_order, hyphen_vocab, words)
+    apply_translate_policy(doc, translate_references=False)
     src.close()
     return doc

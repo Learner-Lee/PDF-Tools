@@ -61,7 +61,8 @@ function layout(blocks) {
   const out = [];
   let refs = null;
   for (const b of blocks) {
-    if (b.type === "reference") {
+    // 打开了文献翻译就照常显示；只有不翻译时才折叠成一条
+    if (b.type === "reference" && !b.translate) {
       if (!refs) { refs = { kind: "refs", id: b.id, count: 0 }; out.push(refs); }
       refs.count += 1;
       continue;

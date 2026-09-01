@@ -77,11 +77,25 @@ _RE_HEAD_WORD = re.compile(r"^([A-Za-z]+)")
 
 
 def collect_words(all_lines: list[str]) -> set[str]:
-    """全文出现过的独立英文单词，用于判断断词两半是否各自成词。"""
+    """全文出现过的独立英文单词，用于判断断词两半是否各自成词。
+
+    必须剔除紧邻行尾连字符的碎片，否则词表会被它本该消歧的断词自己污染：
+    "Daphne Ip-" / "polito," 会让 "ip" 与 "polito" 双双进表，
+    于是"两半各自成词"这条判据反过来把 Ippolito 判成了复合词。
+    """
     words: set[str] = set()
+    prev_hyphenated = False
     for ln in all_lines:
-        for m in _RE_WORD.finditer(ln):
+        toks = list(_RE_WORD.finditer(ln))
+        stripped = ln.rstrip()
+        drop_last = stripped.endswith("-") and len(stripped) >= 2 and stripped[-2].isalpha()
+        for i, m in enumerate(toks):
+            if prev_hyphenated and i == 0:
+                continue                       # 上一行断词的后半截
+            if drop_last and i == len(toks) - 1:
+                continue                       # 本行断词的前半截
             words.add(m.group(0).lower())
+        prev_hyphenated = drop_last
     return words
 
 

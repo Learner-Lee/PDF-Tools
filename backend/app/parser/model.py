@@ -21,14 +21,29 @@ class BlockType(str, Enum):
     WATERMARK = "watermark"        # arXiv 侧边戳等
 
 
-#: 这些类型不送去翻译
+#: 这些类型永不翻译，与设置无关
 NO_TRANSLATE = {
     BlockType.CODE,
     BlockType.MATH,
-    BlockType.REFERENCE,       # 已确认：参考文献默认不翻译
     BlockType.HEADER_FOOTER,
     BlockType.WATERMARK,
+    BlockType.TABLE,           # 表格走单元格级翻译，不作为整段送出
 }
+
+
+def apply_translate_policy(doc: "Document", translate_references: bool) -> None:
+    """按当前设置重算每个块是否翻译。
+
+    这一步刻意放在加载时而非解析时：设置改了要能对已解析的文档立即生效，
+    否则用户打开开关后还得重新导入一遍 PDF。
+    """
+    for b in doc.blocks():
+        if b.merged_into:                  # 已并入段首，由段首承载
+            b.translate = False
+        elif b.type is BlockType.REFERENCE:
+            b.translate = translate_references and b.lang != "zh"
+        else:
+            b.translate = b.type not in NO_TRANSLATE and b.lang != "zh"
 
 
 @dataclass

@@ -14,6 +14,7 @@ export default function Settings({ onClose, onChanged }) {
   const [models, setModels] = useState([]);
   const [busy, setBusy] = useState("");
   const [result, setResult] = useState(null);
+  const [opts, setOpts] = useState({ translate_references: false });
 
   const load = async () => {
     const { providers, active } = await api.providers();
@@ -25,6 +26,7 @@ export default function Settings({ onClose, onChanged }) {
 
   useEffect(() => {
     api.presets().then((d) => setPresets(d.presets)).catch(() => {});
+    api.options().then(setOpts).catch(() => {});
     load().catch(() => {});
   }, []);
 
@@ -213,6 +215,29 @@ export default function Settings({ onClose, onChanged }) {
             {busy === "save" ? "保存中…" : "保存"}
           </button>
           <button className="btn btn-ghost" onClick={onClose}>关闭</button>
+        </div>
+
+        <div className="opts">
+          <h2 style={{ marginTop: 4 }}>阅读选项</h2>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={opts.translate_references}
+              onChange={async (e) => {
+                const next = { translate_references: e.target.checked };
+                setOpts(next);
+                await api.saveOptions(next);
+                onChanged?.();
+              }}
+            />
+            <span>
+              翻译参考文献
+              <em>
+                默认不翻译 —— 文献条目译成中文后反而难与原文对照。
+                打开后按条整条翻译（同一条的续行会先并回来）。
+              </em>
+            </span>
+          </label>
         </div>
 
         {result && (

@@ -217,6 +217,19 @@ export default function App() {
     if (force) scrollTo(side === "en" ? zhPane : enPane, id, true);
   };
 
+  // 设置改动后重新取一遍页面数据：哪些块该翻译由后端按当前策略重算
+  const reload = useCallback(async () => {
+    if (!doc) return;
+    try {
+      const { pages } = await api.pages(doc.id);
+      asked.current = new Set();
+      setPages(pages);
+      ensure(0);
+    } catch (e) {
+      setError(e.message);
+    }
+  }, [doc, ensure]);
+
   // 换了模型或译文不理想时的退路。命中缓存的部分不会重新花钱。
   const retranslate = async () => {
     if (!doc || bulk) return;
@@ -304,7 +317,9 @@ export default function App() {
                    onPick={onPick} onScroll={onZhScroll} />
       </div>
 
-      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+      {showSettings && (
+        <Settings onClose={() => setShowSettings(false)} onChanged={reload} />
+      )}
     </>
   );
 }

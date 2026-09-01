@@ -14,7 +14,8 @@ from pathlib import Path
 from ..config import CACHE_DB, STORAGE
 from ..parser import parse
 from ..parser.pipeline import PARSER_VERSION
-from ..parser.model import Block, Document
+from ..parser.model import Block, Document, apply_translate_policy
+from ..store import get_store
 
 UPLOADS = STORAGE / "uploads"
 UPLOADS.mkdir(parents=True, exist_ok=True)
@@ -58,6 +59,7 @@ class DocumentStore:
         doc = parse(dest)
         self._save(h, filename, doc)
         self._mem[h] = doc
+        apply_translate_policy(doc, self.translate_references())
         return doc
 
     def _save(self, h: str, filename: str, doc: Document) -> None:
@@ -81,6 +83,8 @@ class DocumentStore:
 
     def load(self, h: str) -> Document | None:
         if h in self._mem:
+            # 设置可能已改，每次取用都按当前策略重算
+            apply_translate_policy(self._mem[h], self.translate_references())
             return self._mem[h]
         with self._lock:
             row = self._conn.execute(
@@ -97,7 +101,12 @@ class DocumentStore:
             doc = parse(pdf)
             self._save(h, row["filename"] if "filename" in row.keys() else "", doc)
         self._mem[h] = doc
+        apply_translate_policy(doc, self.translate_references())
         return doc
+
+    @staticmethod
+    def translate_references() -> bool:
+        return bool(get_store().get_setting("translate_references", False))
 
     def list(self) -> list[dict]:
         with self._lock:

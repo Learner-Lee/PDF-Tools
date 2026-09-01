@@ -123,3 +123,17 @@ def test_keeps_unrelated_bracket_numbers():
     """编号与段号不一致时是正文内容，不能动。"""
     raw = '[{"id":0,"zh":"[12] 见参考文献"}]'
     assert parse_segments(raw, 1) == {0: "[12] 见参考文献"}
+
+
+def test_word_list_excludes_hyphen_fragments():
+    """词表不能被它本该消歧的断词碎片污染。
+
+    "Daphne Ip-" / "polito," 若让 ip 与 polito 双双进表，
+    "两半各自成词"这条判据就会把 Ippolito 误判成复合词。
+    """
+    from app.parser.extract import collect_words
+
+    words = collect_words(["Daphne Ip-", "polito, and Chris wrote this paper"])
+    assert "ip" not in words
+    assert "polito" not in words
+    assert "chris" in words and "paper" in words

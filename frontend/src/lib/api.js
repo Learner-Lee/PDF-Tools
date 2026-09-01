@@ -69,6 +69,14 @@ export const api = {
     }
   },
 
+  options: () => fetch("/api/settings/options").then(j),
+  saveOptions: (o) =>
+    fetch("/api/settings/options", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(o),
+    }).then(j),
+
   presets: () => fetch("/api/settings/presets").then(j),
   providers: () => fetch("/api/settings/providers").then(j),
   saveProvider: (p) =>

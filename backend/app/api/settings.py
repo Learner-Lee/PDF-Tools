@@ -25,6 +25,22 @@ class ProfileIn(BaseModel):
         return ProviderProfile(**self.model_dump())
 
 
+class OptionsIn(BaseModel):
+    translate_references: bool
+
+
+@router.get("/options")
+def get_options():
+    store = get_store()
+    return {"translate_references": bool(store.get_setting("translate_references", False))}
+
+
+@router.put("/options")
+def put_options(body: OptionsIn):
+    get_store().set_setting("translate_references", body.translate_references)
+    return {"translate_references": body.translate_references}
+
+
 @router.get("/presets")
 def list_presets():
     return {"presets": PRESETS}

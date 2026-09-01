@@ -69,3 +69,42 @@ def merge_paragraphs(
             blk.translate = False
             continue
         head = blk
+
+
+#: 续行缩进超过首行这么多 pt，即判为同一条文献的续写
+_HANGING_INDENT = 4.0
+
+
+def merge_references(ordered: list[Block], hyphen_vocab=None, words=None) -> None:
+    """把悬挂缩进的参考文献条目并成一条。
+
+    文献表用悬挂缩进排版：每条首行齐左，续行缩进。PyMuPDF 会把它们切成
+    独立的块，于是一条文献变成 "Helmut Appel, Alexander L Gerlach, and Jan
+    Crusius." 与 "2016. The interplay between..." 两块 —— 分开翻译会把
+    作者与标题割裂。按每栏内文献块的最左位置识别首行，其余归为续写。
+    """
+    hyphen_vocab = hyphen_vocab or set()
+    words = words or set()
+
+    refs = [b for b in ordered if b.type is BlockType.REFERENCE]
+    if not refs:
+        return
+    # 每（页, 栏）的齐左位置。跨栏、跨页续写的缩进量不同，必须分组求。
+    flush: dict[tuple[int, int], float] = {}
+    for b in refs:
+        key = (b.page, b.column)
+        flush[key] = min(flush.get(key, b.bbox[0]), b.bbox[0])
+
+    head: Block | None = None
+    for b in ordered:
+        if b.type is not BlockType.REFERENCE:
+            head = None
+            continue
+        left = flush.get((b.page, b.column))
+        if head is not None and left is not None and b.bbox[0] > left + _HANGING_INDENT:
+            head.text = _stitch(head.text, b.text, hyphen_vocab, words)
+            head.merged_from.append(b.id)
+            b.merged_into = head.id
+            b.translate = False
+        else:
+            head = b
