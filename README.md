@@ -20,6 +20,16 @@ cd backend && ../.venv/bin/python -m uvicorn app.main:app --port 8731
 
 打开 http://localhost:8731 即可。
 
+### 构建词库（难词模式需要）
+
+```bash
+cd backend
+../.venv/bin/python -m scripts.fetch_wordlists   # 下载公开词表，约 70 MB
+../.venv/bin/python -m scripts.build_vocab       # 编译成 data/vocab.db，约 39 MB
+```
+
+不构建也能用对照翻译，只是难词模式会提示去构建。词库全程离线，不调用任何 API。
+
 ### 配置翻译服务
 
 首次打开点右上角**设置**，填入任意 OpenAI 兼容端点：
@@ -69,6 +79,30 @@ cd frontend && npm run dev        # http://localhost:5273，已配好 /api 代�
 cd backend && ../.venv/bin/python -m scripts.remap_cache --list
 ../.venv/bin/python -m scripts.remap_cache --from 旧标识 --to-active
 ```
+
+## 难词模式
+
+顶栏切到「难词」：整篇保持英文，只给超出你词汇量的词加一条虚下划线，
+悬停弹出音标、释义与词频档位，可收进生词本并导出 CSV / Anki。
+
+两套等级基准，在设置里自选：
+
+- **按词频档位**：认识 COCA 前 3 千 / 5 千 / 8 千 / 1.5 万词
+- **按考试大纲**：中考 / 高考 / 四级 / 六级 / 考研 / 雅思 / 托福 / GRE
+
+判定全部离线完成，不花钱。专有名词、术语表词条、纯数字与公式代码块自动排除；
+给不出释义的词不做标记 —— 点开是空的下划线只会打断阅读。
+
+### 词库数据来源
+
+| 文件 | 来源 | 许可 |
+|---|---|---|
+| ecdict.csv | [skywind3000/ECDICT](https://github.com/skywind3000/ECDICT) | MIT |
+| lemma.en.txt | 同上（BNC 语料生成的词形还原表） | MIT |
+| coca20000.txt | [mahavivo/english-wordlists](https://github.com/mahavivo/english-wordlists) | 公开整理 |
+
+编译后 40 万词条，其中 1.75 万条有 COCA 名次、19.9 万条有音标，全部带中文释义。
+原始文件与编译产物都不入库，用上面两条命令随时重建。
 
 ## 设计与实现说明
 

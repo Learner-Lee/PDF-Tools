@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api import documents, settings as settings_api
+from .api import documents, settings as settings_api, vocab as vocab_api
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -26,6 +26,7 @@ app.add_middleware(
 
 app.include_router(documents.router)
 app.include_router(settings_api.router)
+app.include_router(vocab_api.router)
 
 
 @app.get("/api/health")

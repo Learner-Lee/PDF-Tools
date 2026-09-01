@@ -8,10 +8,12 @@ storage/
 *.db
 *.sqlite3
 
-# 字体与词表（体积大，用脚本下载）
+# 字体与词表（体积大，用脚本下载/编译，不入库）
 data/fonts/*.otf
 data/fonts/*.ttf
 data/fonts/*.ttc
+data/wordlists/raw/
+data/vocab.db
 
 # Python
 __pycache__/

@@ -77,6 +77,30 @@ export const api = {
       body: JSON.stringify(o),
     }).then(j),
 
+  vocabProfile: () => fetch("/api/vocab/profile").then(j),
+  saveVocabProfile: (p) =>
+    fetch("/api/vocab/profile", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(p),
+    }).then(j),
+  hardWords: (id, pages) =>
+    fetch(`/api/vocab/documents/${id}/hardwords`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pages }),
+    }).then(j),
+  book: () => fetch("/api/vocab/book").then(j),
+  addWord: (w) =>
+    fetch("/api/vocab/book", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(w),
+    }).then(j),
+  removeWord: (lemma) =>
+    fetch(`/api/vocab/book/${encodeURIComponent(lemma)}`, { method: "DELETE" }).then(j),
+  exportBookUrl: (format) => `/api/vocab/book/export?format=${format}`,
+
   presets: () => fetch("/api/settings/presets").then(j),
   providers: () => fetch("/api/settings/providers").then(j),
   saveProvider: (p) =>

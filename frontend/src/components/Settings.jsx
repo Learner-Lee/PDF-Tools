@@ -15,6 +15,7 @@ export default function Settings({ onClose, onChanged }) {
   const [busy, setBusy] = useState("");
   const [result, setResult] = useState(null);
   const [opts, setOpts] = useState({ translate_references: false });
+  const [vocab, setVocab] = useState(null);
 
   const load = async () => {
     const { providers, active } = await api.providers();
@@ -27,6 +28,7 @@ export default function Settings({ onClose, onChanged }) {
   useEffect(() => {
     api.presets().then((d) => setPresets(d.presets)).catch(() => {});
     api.options().then(setOpts).catch(() => {});
+    api.vocabProfile().then(setVocab).catch(() => {});
     load().catch(() => {});
   }, []);
 
@@ -90,6 +92,12 @@ export default function Settings({ onClose, onChanged }) {
       await load();
       onChanged?.();
     });
+
+  const saveVocab = async (profile) => {
+    setVocab((v) => ({ ...v, profile }));
+    await api.saveVocabProfile(profile);
+    onChanged?.();
+  };
 
   const extraText = JSON.stringify(form.extra_body ?? {}, null, 0);
 
@@ -239,6 +247,47 @@ export default function Settings({ onClose, onChanged }) {
             </span>
           </label>
         </div>
+
+        {vocab && (
+          <div className="opts">
+            <h2 style={{ marginTop: 4 }}>难词等级</h2>
+            {!vocab.available ? (
+              <p className="hint">{vocab.hint}</p>
+            ) : (
+              <>
+                <div className="plist">
+                  {[["coca", "按词频档位"], ["exam", "按考试大纲"]].map(([k, label]) => (
+                    <button key={k} className="pchip"
+                            aria-pressed={vocab.profile.basis === k}
+                            onClick={() => saveVocab({ ...vocab.profile, basis: k })}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="plist">
+                  {vocab.profile.basis === "coca"
+                    ? vocab.coca_tiers.map((t) => (
+                        <button key={t} className="pchip"
+                                aria-pressed={vocab.profile.coca_tier === t}
+                                onClick={() => saveVocab({ ...vocab.profile, coca_tier: t })}>
+                          认识前 {t / 1000} 千词
+                        </button>
+                      ))
+                    : vocab.exams.map((e) => (
+                        <button key={e.key} className="pchip"
+                                aria-pressed={vocab.profile.exam_level === e.key}
+                                onClick={() => saveVocab({ ...vocab.profile, exam_level: e.key })}>
+                          {e.label}
+                        </button>
+                      ))}
+                </div>
+                <div className="hint">
+                  超出所选范围的词会在难词模式下标出。范围越大，标注越少。
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {result && (
           <div className={`result ${result.kind}`}>

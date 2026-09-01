@@ -61,6 +61,28 @@ def extract_terms(texts: list[str], min_freq: int = 3, limit: int = 60) -> list[
     return [w for w, c in counter.most_common(limit) if c >= min_freq]
 
 
+def proper_nouns(texts: list[str]) -> set[str]:
+    """全文中的专有名词（小写形式，供难词标注排除）。
+
+    判据与术语表一致：某个大写词若其小写形式也在文中出现过，说明只是句首
+    大写的普通词；从不小写出现的才是专有名词。不做这一步，作者名、地名会被
+    当成难词，还会配上词库里同名缩写的荒唐释义（Hua -> "住房与城市事务"）。
+    """
+    lower_seen: set[str] = set()
+    for t in texts:
+        lower_seen.update(m.group(0) for m in _RE_LOWER_TOKEN.finditer(t))
+
+    out: set[str] = set()
+    for t in texts:
+        for m in _RE_PROPER.finditer(t):
+            w = m.group(0)
+            if w not in _STOP and w.lower() not in lower_seen:
+                out.add(w.lower())
+        for m in _RE_ACRONYM.finditer(t):
+            out.add(m.group(0).lower())
+    return out
+
+
 def build_glossary(
     provider: OpenAICompatProvider, terms: list[str], model: str | None = None
 ) -> dict[str, str]:

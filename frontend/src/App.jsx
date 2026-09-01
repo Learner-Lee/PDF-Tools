@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./lib/api";
 import PdfPane from "./components/PdfPane";
 import TransPane from "./components/TransPane";
+import HardWordPane from "./components/HardWordPane";
+import VocabBook from "./components/VocabBook";
 import Gutter from "./components/Gutter";
 import Settings from "./components/Settings";
 
@@ -77,12 +79,17 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [bulk, setBulk] = useState(null);
   const [recent, setRecent] = useState([]);
+  const [mode, setMode] = useState("bilingual");   // bilingual | hardwords
+  const [hardwords, setHardwords] = useState({});
+  const [collected, setCollected] = useState(new Set());
+  const [showBook, setShowBook] = useState(false);
 
   const enPane = useRef(null);
   const zhPane = useRef(null);
   const syncing = useRef(false);
   const syncTimer = useRef(0);
   const asked = useRef(new Set());
+  const askedHw = useRef(new Set());
 
   useEffect(() => {
     if (!doc) api.list().then((d) => setRecent(d.documents)).catch(() => {});
@@ -117,9 +124,29 @@ export default function App() {
   };
 
   // ── 懒加载翻译 ────────────────────────────────────────
+  const ensureHardWords = useCallback(
+    async (from) => {
+      if (!doc) return;
+      const want = [];
+      for (let i = from; i < Math.min(from + 1 + PREFETCH, doc.page_count); i++) {
+        if (!askedHw.current.has(i)) { askedHw.current.add(i); want.push(i); }
+      }
+      if (!want.length) return;
+      try {
+        const { hardwords } = await api.hardWords(doc.id, want);
+        setHardwords((h) => ({ ...h, ...hardwords }));
+      } catch (e) {
+        want.forEach((i) => askedHw.current.delete(i));
+        setError(e.message);
+      }
+    },
+    [doc]
+  );
+
   const ensure = useCallback(
     async (from) => {
       if (!doc) return;
+      if (mode === "hardwords") return ensureHardWords(from);
       const want = [];
       for (let i = from; i < Math.min(from + 1 + PREFETCH, doc.page_count); i++) {
         if (!asked.current.has(i)) { asked.current.add(i); want.push(i); }
@@ -134,10 +161,33 @@ export default function App() {
         setError(e.message);
       }
     },
-    [doc]
+    [doc, mode, ensureHardWords]
   );
 
   useEffect(() => { if (doc) ensure(0); }, [doc, ensure]);
+
+  useEffect(() => {
+    api.book().then((d) => setCollected(new Set(d.items.map((i) => i.lemma))))
+      .catch(() => {});
+  }, []);
+
+  // 切换到难词模式时按当前页取一次，不必等下一次滚动
+  useEffect(() => {
+    if (doc && mode === "hardwords") ensureHardWords(Math.max(folio - 1, 0));
+  }, [mode, doc, folio, ensureHardWords]);
+
+  const collect = async (word, context) => {
+    if (collected.has(word.lemma)) {
+      await api.removeWord(word.lemma);
+      setCollected((s) => { const n = new Set(s); n.delete(word.lemma); return n; });
+      return;
+    }
+    await api.addWord({
+      lemma: word.lemma, surface: word.surface, phonetic: word.phonetic,
+      pos: word.pos, gloss: word.gloss, context, doc_id: doc.id,
+    });
+    setCollected((s) => new Set(s).add(word.lemma));
+  };
 
   // ── 滚动：定位当前页、驱动懒加载、决定活动段 ───────────
   const onEnScroll = () => {
@@ -223,6 +273,8 @@ export default function App() {
     try {
       const { pages } = await api.pages(doc.id);
       asked.current = new Set();
+      askedHw.current = new Set();
+      setHardwords({});
       setPages(pages);
       ensure(0);
     } catch (e) {
@@ -290,9 +342,23 @@ export default function App() {
         <span className="wordmark">PDF 对照</span>
         <span className="doc-title" title={doc.title}>{doc.title}</span>
         <span className="folio">{folio} / {doc.page_count}</span>
-        <button className="icon-btn" onClick={translateAll} disabled={!!bulk}>
-          {bulk ? `翻译全文 ${bulk.done}/${bulk.total}` : "翻译全文"}
-        </button>
+        <div className="seg">
+          <button aria-pressed={mode === "bilingual"} onClick={() => setMode("bilingual")}>
+            对照
+          </button>
+          <button aria-pressed={mode === "hardwords"} onClick={() => setMode("hardwords")}>
+            难词
+          </button>
+        </div>
+        {mode === "hardwords" ? (
+          <button className="icon-btn" onClick={() => setShowBook(true)}>
+            生词本 {collected.size || ""}
+          </button>
+        ) : (
+          <button className="icon-btn" onClick={translateAll} disabled={!!bulk}>
+            {bulk ? `翻译全文 ${bulk.done}/${bulk.total}` : "翻译全文"}
+          </button>
+        )}
         <button className="icon-btn" onClick={retranslate} disabled={!!bulk}>
           重新翻译
         </button>
@@ -313,12 +379,25 @@ export default function App() {
         <PdfPane paneRef={enPane} docId={doc.id} pages={pages}
                  active={active} onPick={onPick} onScroll={onEnScroll} />
         <Gutter enPane={enPane} zhPane={zhPane} active={active} />
-        <TransPane paneRef={zhPane} pages={pages} active={active}
-                   onPick={onPick} onScroll={onZhScroll} />
+        {mode === "bilingual" ? (
+          <TransPane paneRef={zhPane} pages={pages} active={active}
+                     onPick={onPick} onScroll={onZhScroll} />
+        ) : (
+          <HardWordPane paneRef={zhPane} pages={pages} hardwords={hardwords}
+                        active={active} onPick={onPick} onScroll={onZhScroll}
+                        collected={collected} onCollect={collect} />
+        )}
       </div>
 
       {showSettings && (
         <Settings onClose={() => setShowSettings(false)} onChanged={reload} />
+      )}
+      {showBook && (
+        <VocabBook
+          onClose={() => setShowBook(false)}
+          onChanged={() => api.book().then((d) =>
+            setCollected(new Set(d.items.map((i) => i.lemma))))}
+        />
       )}
     </>
   );
