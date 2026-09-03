@@ -81,3 +81,13 @@ OpenAI / OpenRouter / Ollama / llama.cpp…），填密钥，点「获取模型�
 ## 反馈
 
 欢迎通过 [GitHub Issues](https://github.com/Learner-Lee/PDF-Tools/issues) 提交问题与建议。
+
+## 纯前端版
+
+`web/` 下另有一个**纯前端**版本：PDF 不上传、刷新即清空、可部署为静态站点供多人访问。
+解析与难词判定全在浏览器完成，翻译直连你选定的 LLM 服务。
+
+代价是不做原版式 PDF 导出（只导 Markdown），且该 LLM 服务必须允许跨域
+（DeepSeek、硅基流动、智谱、OpenRouter、OpenAI 实测可直连；阿里云百炼需配一个转发代理）。
+
+见 [web/README.md](web/README.md)。
