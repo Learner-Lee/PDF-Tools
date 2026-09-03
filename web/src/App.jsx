@@ -245,18 +245,22 @@ export default function App() {
       if (w.offsetTop <= mid) cur = Number(w.dataset.page);
     setFolio(cur + 1);
     ensure(cur);
+    // 滚动只更新高亮，不带动另一栏 —— 两栏各滚各的，
+    // 想让对方跟过来时点一下那一段（onPick 的 force 分支）。
     if (syncing.current) return;
     const best = nearestTo(el, ".blockbox:not(.is-skip)");
-    if (best && best !== active) { setActive(best); scrollTo(zhPane, best); }
+    if (best && best !== active) setActive(best);
   };
 
   const onZhScroll = () => {
     const el = zhPane.current;
     if (!el || syncing.current) return;
     const best = nearestTo(el, ".seg-block, .refs-mark");
-    if (best && best !== active) { setActive(best); scrollTo(enPane, best); }
+    if (best && best !== active) setActive(best);
   };
 
+  // 悬停只高亮；点击（force）才把另一栏移到对应位置 —— 这是两栏之间
+  // 唯一会产生联动的操作，滚动不会。
   const onPick = (id, side, force = false) => {
     setActive(id);
     if (force) scrollTo(side === "en" ? zhPane : enPane, id, true);
