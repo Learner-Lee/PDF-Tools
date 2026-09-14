@@ -3,10 +3,11 @@
  */
 import { BlockType, applyTranslatePolicy } from "./model.js";
 import {
-  collectHyphenVocab, collectWords, detectLang, extractPage, joinLines, lineText,
+  buildFontStyles, collectHyphenVocab, collectPageFonts, collectWords, detectLang,
+  extractPage, joinLines, lineText,
 } from "./extract.js";
 import { assignColumns, detectColumns, readingOrder } from "./layout.js";
-import { classifyPage, markFrontMatter } from "./classify.js";
+import { classifyPage, findRunningHeads, markFrontMatter } from "./classify.js";
 import { mergeParagraphs, mergeReferences } from "./merge.js";
 import { extractRules, findTables } from "./tables.js";
 
@@ -42,13 +43,20 @@ export async function parsePdf(data, { pdfjs, onProgress } = {}) {
   const pdf = await pdfjs.getDocument({ data, useSystemFonts: false }).promise;
   const meta = await pdf.getMetadata().catch(() => ({}));
 
-  // 先把所有页抽出来：连字符消歧需要全文词表，抽取与拼接必须分两趟
+  // 先扫一遍字体名建样式表：字重要靠文档内的同族变体推断，
+  // 必须先看全所有字体，才能知道 LinLibertineTB 是 LinLibertineT 的粗体
+  const fontNames = [];
+  for (let i = 1; i <= pdf.numPages; i++)
+    fontNames.push(...await collectPageFonts(await pdf.getPage(i)));
+  const styles = buildFontStyles(fontNames);
+
+  // 再把所有页抽出来：连字符消歧需要全文词表，抽取与拼接也必须分两趟
   const pagesRaw = [];
   const pageInfo = [];
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const vp = page.getViewport({ scale: 1 });
-    const raw = await extractPage(page, vp.width, vp.height);
+    const raw = await extractPage(page, vp.width, vp.height, styles);
     const opList = await page.getOperatorList();
     pagesRaw.push(raw);
     pageInfo.push({
@@ -127,8 +135,14 @@ export async function parsePdf(data, { pdfjs, onProgress } = {}) {
       });
     });
 
-    inRefs = classifyPage(page.blocks, info.height, info.width, inRefs);
-    if (pno === 0) markFrontMatter(page.blocks);
+    doc.pages.push(page);
+  }
+
+  // 书眉要跨页比对才认得出来，所以分类必须等所有页的块都建好
+  const running = findRunningHeads(doc.pages);
+  for (const page of doc.pages) {
+    inRefs = classifyPage(page.blocks, page.height, page.width, inRefs, running);
+    if (page.number === 0) markFrontMatter(page.blocks);
 
     // 栏号在抽取阶段已按 span 分布确定，比事后按块 bbox 重判更可靠
     const known = page.blocks.filter((b) => b._col !== undefined);
@@ -138,7 +152,6 @@ export async function parsePdf(data, { pdfjs, onProgress } = {}) {
       delete b._col;
     }
     globalOrder.push(...readingOrder(page.blocks, page.columns));
-    doc.pages.push(page);
   }
 
   mergeParagraphs(globalOrder, hyphenVocab, words);

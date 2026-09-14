@@ -22,7 +22,7 @@ from .tables import find_tables
 
 #: 解析逻辑变更时递增。已持久化的文档模型据此失效并重新解析，
 #: 否则用户升级后仍会看到旧解析结果（如附录被误判为参考文献）。
-PARSER_VERSION = 5
+PARSER_VERSION = 6
 
 #: 平均每页可提取字符数低于此值，判定为扫描件，需 OCR（第一版不支持）
 TEXT_PDF_MIN_CHARS_PER_PAGE = 100
@@ -87,6 +87,7 @@ def parse(path: str | Path) -> Document:
 
     body_size = _body_size(src)
     in_refs = False
+    page_objs: list = []
     global_order: list[Block] = []
 
     # 先把所有页的行抽出来，再建连字符词表 —— 判断行尾 "-" 是断词还是复合词，
@@ -148,16 +149,20 @@ def parse(path: str | Path) -> Document:
                 )
             )
 
-        in_refs = _cls.classify_page(page.blocks, ph, pw, body_size, in_refs)
-        if pno == 0:
+        page_objs.append((page, ph, pw))
+        doc.pages.append(page)
+
+    # 书眉要跨页比对才认得出来，所以分类必须等所有页的块都建好
+    running = _cls.find_running_heads(doc.pages)
+    for page, ph, pw in page_objs:
+        in_refs = _cls.classify_page(page.blocks, ph, pw, body_size, in_refs, running)
+        if page.number == 0:
             _cls.mark_front_matter(page.blocks)
 
         page.columns = _lay.detect_columns(page.blocks, pw)
         _lay.assign_columns(page.blocks, pw, page.columns)
         ordered = _lay.reading_order(page.blocks, page.columns)
-
         global_order.extend(ordered)
-        doc.pages.append(page)
 
     merge_paragraphs(global_order, hyphen_vocab, words)
     merge_references(global_order, hyphen_vocab, words)

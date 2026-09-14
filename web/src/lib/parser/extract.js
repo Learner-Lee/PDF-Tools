@@ -7,11 +7,16 @@
  */
 
 const RE_MONO = /Inconsolata|SFTT|Courier|Mono|Typewriter|CMTT/i;
-/** 数学字体只认这几族。CMR/CMB 是 Computer Modern 正文体，
- *  论文里用来排编号列表，绝不能当公式排除掉。 */
-const RE_MATH = /CM(MI|SY|EX)|MS[AB]M|EU[FSMB]|rsfs|stmary|LASY/i;
-const RE_BOLD = /Bold|Medi|Black|Semib|Heavy/i;
-const RE_ITALIC = /Ital|Oblique/i;
+/**
+ * 数学字体族。CMR/CMB 是 Computer Modern 正文体，论文里用来排编号列表，
+ * 绝不能当公式排除掉；而 TX 系列（txmi/txsy/txex、NewTX*）与 *MathMI*
+ * 是 ACM 模板常用的数学字体，漏掉会把整段公式当正文送去翻译。
+ */
+const RE_MATH = /CM(MI|SY|EX)|MS[AB]M|EU[FSMB]|rsfs|stmary|LASY|Math(MI|SY|EX)|\btx(mi|sy|ex)|NewTX(MI|SY|EX)/i;
+/** 字重/字形的关键词判据。命名习惯千差万别，所以它只是补充，
+ *  主判据是下面那套按文档内同族变体推断的办法。 */
+const RE_BOLD = /bold|black|heavy|semib|demi|medi(?![a-z])/i;
+const RE_ITALIC = /ital|oblique/i;
 const RE_CJK = /[一-鿿㐀-䶿]/;
 const RE_LATIN = /[A-Za-z]/;
 
@@ -21,12 +26,44 @@ function cleanFontName(name) {
 }
 
 /**
+ * 按文档内的同族变体推断字重与字形。
+ *
+ * pdf.js 对内嵌子集字体不给 bold/italic 标志（实测全是 undefined），
+ * 只能看字体名。但命名习惯差别很大 —— ACL 那篇用 `NimbusRomNo9L-Medi`，
+ * ACM 这篇用 `LinLibertineTB`，靠枚举关键词必然漏。
+ *
+ * 改用文档自身的证据：去掉名字尾部的 B/I 之后，若剩下的名字也在本文档里
+ * 出现过，说明这是同一族的粗体/斜体变体。
+ *
+ *   LinLibertineTB  → 去 B  → LinLibertineT （文档中存在）→ 粗体
+ *   LinLibertineTBI → 去 BI → LinLibertineT （存在）       → 粗斜
+ *   LinBiolinumTB   → 去 B  → LinBiolinumT  （存在）       → 粗体
+ *   LinLibertineT   → 尾部无 B/I                           → 常规
+ */
+export function buildFontStyles(names) {
+  const all = new Set(names);
+  const styles = new Map();
+  for (const name of all) {
+    let bold = RE_BOLD.test(name);
+    let italic = RE_ITALIC.test(name);
+
+    const m = /^(.*?)([BI]{1,2})$/.exec(name);
+    if (m && all.has(m[1])) {
+      if (m[2].includes("B")) bold = true;
+      if (m[2].includes("I")) italic = true;
+    }
+    styles.set(name, { bold, italic });
+  }
+  return styles;
+}
+
+/**
  * 把 pdf.js 的 item 转成 span。
  *
  * pdf.js 的坐标原点在左下角，且 transform[5] 是基线位置；
  * 统一换算成左上角原点的字形外框，好和后续的行列聚类对齐。
  */
-function toSpan(item, fontName, pageHeight) {
+function toSpan(item, fontName, pageHeight, styles) {
   const tx = item.transform;
   const size = Math.hypot(tx[1], tx[3]) || tx[3] || item.height || 10;
   const x0 = tx[4];
@@ -38,13 +75,14 @@ function toSpan(item, fontName, pageHeight) {
   const bbox = rotated
     ? [x0 - size, baseline - w, x0 + size, baseline]
     : [x0, baseline - size * 0.8, x0 + w, baseline + size * 0.2];
+  const style = styles?.get(fontName);
   return {
     rotated,
     text: item.str,
     font: fontName,
     size: +size.toFixed(2),
-    bold: RE_BOLD.test(fontName),
-    italic: RE_ITALIC.test(fontName),
+    bold: style ? style.bold : RE_BOLD.test(fontName),
+    italic: style ? style.italic : RE_ITALIC.test(fontName),
     mono: RE_MONO.test(fontName),
     math: RE_MATH.test(fontName),
     baseline,
@@ -96,9 +134,13 @@ function findGutter(spans, pageWidth, pageHeight) {
     for (let i = a; i <= b; i++) cover[i]++;
   }
 
-  // 判据是中带覆盖**相对两侧栏**的比值，而非绝对空白：
-  // 一两个跨栏元素（宽表、居中标题）不该让整页塌成单栏。
-  // 实测真双栏页此比值为 0~26%，被宽表主导的页面则到 59%。
+  // 判据是中带覆盖**相对两侧栏**的比值，而非绝对空白：跨栏元素（宽表、大图、
+  // 居中标题）不该让整页塌成单栏 —— 一旦塌成单栏，左右栏的行会被拼成一行，
+  // 得到 "…informational, ex-的人生照片。每次想到…" 这种串行。
+  //
+  // 阈值放得比较宽（0.75），因为后面还有一道「两侧内容量是否压过跨栏内容」的
+  // 检查兜底：真正的单栏页上左右两组会很空，那道检查会把它退回单栏，
+  // 而双栏页上的宽表会正确落进 straddle 组。
   const mean = (a, b) => {
     let sum = 0;
     for (let i = a; i < b; i++) sum += cover[i];
@@ -108,19 +150,25 @@ function findGutter(spans, pageWidth, pageHeight) {
     mean(Math.floor(n * 0.15), Math.floor(n * 0.35)),
     mean(Math.floor(n * 0.65), Math.floor(n * 0.85))
   );
-  if (sides < 3) return null;                 // 内容太少，判不出栏
-  const thresh = sides * 0.35;
 
   const lo = Math.floor(n * 0.38), hi = Math.ceil(n * 0.62);
-  let best = null, run = 0;
-  for (let i = lo; i <= hi; i++) {
-    if (cover[i] < thresh) {
-      run++;
-      if (!best || run > best.len) best = { end: i, len: run };
-    } else run = 0;
-  }
-  // 空白带至少 8pt 宽才算栏间距，否则只是行末参差
-  if (!best || best.len * step < 8) return null;
+  const widest = (limit) => {
+    let best = null, run = 0;
+    for (let i = lo; i <= hi; i++) {
+      if (cover[i] <= limit) {
+        run++;
+        if (!best || run > best.len) best = { end: i, len: run };
+      } else run = 0;
+    }
+    return best && best.len * step >= 8 ? best : null;   // 至少 8pt 才算栏间距
+  };
+
+  // 两条判据取其一：
+  // 1. 中带**完全空白** —— 铁证，与两侧内容多寡无关。
+  //    文献页末尾右栏可能只剩几行，按比值算会因两侧均值过低而误判单栏。
+  // 2. 中带覆盖远低于两侧 —— 跨栏的宽表、大图会穿过中带，但压不过正文。
+  const best = widest(0) || (sides >= 3 ? widest(sides * 0.75) : null);
+  if (!best) return null;
   return ((best.end - best.len / 2 + 0.5) * step);
 }
 
@@ -132,11 +180,20 @@ function splitByColumn(spans, pageWidth, pageHeight) {
   // 居中的作者行由多个不跨中线的 span 组成，逐个判会被劈成左右两半；
   // 而栏间距（实测 14pt）远大于行内字距（<5pt），据此可以区分。
   const runs = [];
-  for (const sp of [...spans].sort((a, b) => a.baseline - b.baseline || a.bbox[0] - b.bbox[0])) {
+  // 基线取整再排序：同一视觉行的 span 基线有微小浮点差异，
+  // 不取整的话右栏的 span 可能排在左栏之前，行段就会从右往左拼。
+  const ordered = [...spans].sort(
+    (a, b) => Math.round(a.baseline) - Math.round(b.baseline) || a.bbox[0] - b.bbox[0]
+  );
+  for (const sp of ordered) {
     const last = runs[runs.length - 1];
+    const dx = last ? sp.bbox[0] - last.x1 : 0;
     const near = last
       && Math.abs(last.baseline - sp.baseline) <= Math.max(sp.size, 6) * 0.3
-      && sp.bbox[0] - last.x1 <= Math.max(sp.size * 0.6, 5);
+      // dx 必须有下界：负间距意味着这个 span 在行段左侧，
+      // 只判「不超过阈值」会把左栏的词并进右栏的行段（实测 dx=-506 照样通过）
+      && dx >= -Math.max(sp.size, 6)
+      && dx <= Math.max(sp.size * 0.6, 5);
     if (near) {
       last.spans.push(sp);
       last.x1 = Math.max(last.x1, sp.bbox[2]);
@@ -355,15 +412,23 @@ export function detectLang(text) {
   return "en";
 }
 
+/** 只收集一页用到的字体名，供建立全文字体样式表。 */
+export async function collectPageFonts(page) {
+  await page.getOperatorList();          // 触发字体解析
+  const tc = await page.getTextContent();
+  const fonts = await fontMap(page, tc.items);
+  return [...fonts.values()];
+}
+
 /** 抽取一页的原始块（未分类、未合并），并返回行文本供建词表用。 */
-export async function extractPage(page, pageWidth, pageHeight) {
+export async function extractPage(page, pageWidth, pageHeight, styles) {
   await page.getOperatorList();          // 触发字体解析
   const tc = await page.getTextContent();
   const fonts = await fontMap(page, tc.items);
 
   const spans = tc.items
     .filter((it) => it.str && it.str.length)
-    .map((it) => toSpan(it, fonts.get(it.fontName) || it.fontName, pageHeight))
+    .map((it) => toSpan(it, fonts.get(it.fontName) || it.fontName, pageHeight, styles))
     .filter((s) => s.text.trim() || s.text === " ");
 
   const out = [];

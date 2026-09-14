@@ -11,6 +11,7 @@ from .model import Block, BlockType, Span
 
 _RE_CAPTION = re.compile(r"^\s*(Figure|Fig\.|Table|Algorithm|Listing|Appendix)\s*\d+", re.I)
 _RE_LIST = re.compile(r"^\s*([•·▪‣∙]|[-–—]\s|\(?[a-z0-9]{1,3}[.)]\s)")
+_RE_BULLET = re.compile(r"^\s*[•·▪‣∙]")
 _RE_HEADING_NUM = re.compile(r"^\s*(\d+(\.\d+)*|[A-Z](\.\d+)*)\s*\.?\s+\S")
 _RE_REF_HEAD = re.compile(r"^\s*(References|Bibliography|参考文献)\s*$", re.I)
 #: 附录/章节标题：字母或数字编号后跟空格与正文，如 "A Release Artifacts"、"B.1 Prompt variants"
@@ -60,6 +61,10 @@ def classify(
     # 5. 图表标题
     if _RE_CAPTION.match(text):
         return BlockType.CAPTION
+    # 以项目符号开头的行不可能是标题，这条要排在字重判定之前 ——
+    # ACM 的 CCS 条目是加粗的项目符号行，否则会被当成标题
+    if _RE_BULLET.match(text):
+        return BlockType.LIST
 
     # 6. 章节标题：整块加粗 + 文本短。字号在此不可靠，故不参与判定。
     bold = _ratio(spans, "bold")
@@ -89,16 +94,66 @@ def _ends_references(block: Block) -> bool:
     )
 
 
+#: 跨页重复检测的取值带：页面上下各这么多比例
+_RUNNING_BAND = 0.12
+#: 归一化后出现在这么多页上，才算书眉
+_RUNNING_MIN_PAGES = 3
+
+_RE_DIGITS = re.compile(r"\d+")
+
+
+def _running_key(text: str, y0: float) -> str:
+    """书眉的归一化键：去掉数字（页码会变），y 位置取粗粒度。"""
+    return f"{_RE_DIGITS.sub('#', text.strip().lower())}|{round(y0 / 6)}"
+
+
+def find_running_heads(pages) -> set[str]:
+    """找出书眉与页脚：**同样的文字在同样的高度反复出现**。
+
+    只按「离页边多近」判断不可靠 —— 实测 ACM 模板的书眉在页高 7.7% 处，
+    ACL 模板的页码在 94% 处，任何固定阈值都会在另一种模板上失手。
+    跨页重复才是书眉的定义性特征。
+    """
+    from collections import defaultdict
+
+    seen: dict[str, list] = defaultdict(list)
+    for page in pages:
+        top = page.height * _RUNNING_BAND
+        bottom = page.height * (1 - _RUNNING_BAND)
+        for b in page.blocks:
+            text = b.text.strip()
+            if not text or len(text) > 120:
+                continue
+            if b.bbox[1] > top and b.bbox[3] < bottom:
+                continue
+            seen[_running_key(text, b.bbox[1])].append(b)
+
+    out: set[str] = set()
+    need = min(_RUNNING_MIN_PAGES, max(2, len(pages) // 3))
+    for blocks in seen.values():
+        pages_hit = {b.page for b in blocks}
+        # 纯数字（页码）只要落在带内就算，它每页都不一样，凑不齐重复次数
+        is_number = all(b.text.strip().replace(" ", "").isdigit() for b in blocks)
+        if len(pages_hit) >= need or is_number:
+            out.update(b.id for b in blocks)
+    return out
+
+
 def classify_page(
     blocks: list[Block],
     page_height: float,
     page_width: float,
     body_size: float,
     in_references: bool,
+    running: set[str] | None = None,
 ) -> bool:
     """就地分类整页。返回离开本页时是否仍处于参考文献区。"""
+    running = running or set()
     for b in blocks:
         if b.type is BlockType.TABLE:      # 表格已在管线中定型
+            continue
+        if b.id in running:                # 跨页重复的书眉/页码
+            b.type = BlockType.HEADER_FOOTER
             continue
         if in_references and _ends_references(b):
             in_references = False
