@@ -15,11 +15,15 @@
 ```sh
 cd web
 npm install
-npm run build          # 产物在 dist/，约 7 MB
+python3 scripts/build_web_vocab.py   # 生成难词词库（缺它构建不报错，但难词模式会 404）
+npm run build                        # 产物在 dist/，约 7 MB
 ```
 
 把 `dist/` 交给任意静态托管即可 —— Nginx、Vercel、Netlify、GitHub Pages、对象存储都行。
 没有后端进程要守护。
+
+完整的上传清单、Nginx 配置、代理的 systemd 单元与几个易踩的坑，见
+**[部署指南](DEPLOY.md)**。
 
 部署到子路径（如 `https://example.com/pdf/`）时，先改 `vite.config.js` 里的
 `base: "./"` 为 `base: "/pdf/"` 再构建。

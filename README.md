@@ -90,4 +90,4 @@ OpenAI / OpenRouter / Ollama / llama.cpp…），填密钥，点「获取模型�
 代价是不做原版式 PDF 导出（只导 Markdown），且该 LLM 服务必须允许跨域
 （DeepSeek、硅基流动、智谱、OpenRouter、OpenAI 实测可直连；阿里云百炼需配一个转发代理）。
 
-见 [web/README.md](web/README.md)。
+见 [web/README.md](web/README.md)，部署步骤见 [web/DEPLOY.md](web/DEPLOY.md)。
