@@ -1,3 +1,6 @@
 node_modules/
 dist/
 public/vocab.json
+
+# 上传包由 scripts/pack.sh 生成
+upload/

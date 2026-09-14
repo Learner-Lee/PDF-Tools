@@ -21,6 +21,28 @@
 
 ---
 
+## 一条命令打包
+
+不想逐步操作的话，直接生成一个可以上传的目录：
+
+```sh
+cd web && ./scripts/pack.sh
+```
+
+产出 `web/upload/`，里面分好了传哪些、怎么传：
+
+```
+upload/
+├── README.md                上传说明
+├── nginx.conf.example       Nginx 配置示例
+├── site/                    ← 传这个目录的内容到网站根目录
+└── proxy/                   ← 仅用阿里云百炼时需要
+    ├── server.mjs
+    └── pdf-proxy.service    systemd 单元
+```
+
+脚本会自动补齐词库、清掉 `.DS_Store`。下面是手动分步的说明。
+
 ## 方案 A：纯静态
 
 ### 1. 本机构建
